@@ -1,0 +1,292 @@
+/* src/styles/index.css */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import './themes.css';
+
+html {
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  transition: background 0.4s ease, color 0.3s ease;
+}
+
+/* ========== 滚动条 ========== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* ========== Element Plus 暗色变量覆盖 ========== */
+:root {
+  --el-bg-color: var(--bg-card);
+  --el-bg-color-overlay: var(--bg-secondary);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-placeholder: var(--text-placeholder);
+  --el-border-color: var(--border-secondary);
+  --el-border-color-light: var(--border-primary);
+  --el-fill-color-blank: var(--bg-card);
+  --el-mask-color: rgba(0, 0, 0, 0.5);
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: var(--accent-hover);
+  --el-color-primary-light-5: var(--accent-bg);
+  --el-color-primary-light-7: var(--accent-bg-light);
+  --el-color-primary-light-9: var(--accent-bg-light);
+  --el-color-primary-dark-2: var(--accent-hover);
+  --el-color-success: var(--success);
+  --el-color-danger: var(--danger);
+  --el-color-warning: var(--warning);
+  --el-color-info: var(--info);
+}
+
+/* ========== 下拉菜单 ========== */
+.el-popper.is-dark {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+}
+
+.el-dropdown-menu {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
+
+.el-dropdown-menu__item {
+  color: var(--text-secondary) !important;
+}
+
+.el-dropdown-menu__item:hover {
+  background: var(--accent-bg-light) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ========== Input 输入框 ========== */
+.el-input__wrapper {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-secondary) !important;
+  box-shadow: none !important;
+  transition: all 0.2s;
+}
+
+.el-input__wrapper:hover {
+  border-color: var(--border-hover) !important;
+}
+
+.el-input__wrapper.is-focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-glow) !important;
+}
+
+.el-input__inner {
+  color: var(--text-primary) !important;
+}
+
+.el-input__inner::placeholder {
+  color: var(--text-placeholder) !important;
+}
+
+.el-input__prefix .el-icon {
+  color: var(--text-muted) !important;
+}
+
+/* ========== Button 按钮 ========== */
+.el-button--primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+.el-button--primary:hover {
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+  box-shadow: 0 4px 12px var(--accent-glow) !important;
+}
+
+.el-button--danger {
+  background: var(--danger-bg) !important;
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+
+/* ========== Table 表格 ========== */
+.el-table {
+  --el-table-bg-color: transparent !important;
+  --el-table-tr-bg-color: transparent !important;
+  --el-table-header-bg-color: var(--bg-secondary) !important;
+  --el-table-border-color: var(--border-secondary) !important;
+  --el-table-text-color: var(--text-primary) !important;
+  --el-table-header-text-color: var(--text-muted) !important;
+  --el-table-row-hover-bg-color: var(--accent-bg-light) !important;
+}
+
+/* ========== Select 选择器 ========== */
+.el-select__wrapper {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-secondary) !important;
+  box-shadow: none !important;
+}
+
+.el-select__wrapper:hover {
+  border-color: var(--border-hover) !important;
+}
+
+/* ========== Slider 滑块 ========== */
+.el-slider__runway {
+  background: var(--border-secondary) !important;
+}
+
+/* ========== Breadcrumb 面包屑 ========== */
+.el-breadcrumb__inner,
+.el-breadcrumb__separator {
+  color: var(--text-muted) !important;
+}
+
+/* ========== Progress 进度条 ========== */
+.el-progress__text {
+  color: var(--text-secondary) !important;
+}
+
+/* ========== Empty 空状态 ========== */
+.el-empty__description p {
+  color: var(--text-muted) !important;
+}
+
+/* ========== Tag 标签 ========== */
+.el-tag {
+  border-color: var(--border-secondary) !important;
+}
+
+/* ========== Radio 单选 ========== */
+.el-radio-button__inner {
+  background: var(--bg-card) !important;
+  border-color: var(--border-secondary) !important;
+  color: var(--text-secondary) !important;
+}
+
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #fff !important;
+}
+
+/* ========== MessageBox ========== */
+.el-message-box {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
+
+.el-message-box__title {
+  color: var(--text-primary) !important;
+}
+
+.el-message-box__content {
+  color: var(--text-secondary) !important;
+}
+
+/* ========== 主题弹出框 ========== */
+.theme-popover.el-popper.is-dark {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+  padding: 14px !important;
+}
+
+.theme-popover.el-popper .el-popper__arrow::before {
+  background: var(--bg-card) !important;
+  border-color: var(--border-secondary) !important;
+}
+
+/* ========== 用户下拉菜单 ========== */
+.el-popper.el-dropdown__popper {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+}
+
+.el-popper.el-dropdown__popper .el-popper__arrow::before {
+  background: var(--bg-card) !important;
+  border-color: var(--border-secondary) !important;
+}
+
+.el-dropdown-menu {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  border-radius: 10px !important;
+  padding: 6px !important;
+}
+
+.el-dropdown-menu__item {
+  color: var(--text-secondary) !important;
+  border-radius: 6px !important;
+  margin: 2px 0 !important;
+  padding: 8px 14px !important;
+}
+
+.el-dropdown-menu__item:hover {
+  background: var(--accent-bg-light) !important;
+  color: var(--text-primary) !important;
+}
+
+.el-dropdown-menu__item .el-icon {
+  margin-right: 8px !important;
+  color: var(--text-muted) !important;
+}
+
+.el-dropdown-menu__item:hover .el-icon {
+  color: var(--accent) !important;
+}
+
+.el-dropdown__popper .el-dropdown-menu__item--divided {
+  border-top: 1px solid var(--border-secondary) !important;
+}
+
+.el-dropdown__popper .el-dropdown-menu__item--divided::before {
+  background: transparent !important;
+}
+
+/* ========== 全局主题过渡 ========== */
+.el-menu,
+.el-menu-item,
+.el-sub-menu__title,
+.el-breadcrumb,
+.el-button,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-table,
+.el-progress__text,
+.el-radio-button__inner {
+  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+}
+
+/* ========== el-menu 子菜单 ========== */
+.el-menu--vertical:not(.el-menu--collapse) .el-menu--popup {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
+
+/* ========== 覆盖 el-menu 暗色 ========== */
+.el-menu {
+  background-color: transparent !important;
+}
+
+.el-popper.is-light {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+}
