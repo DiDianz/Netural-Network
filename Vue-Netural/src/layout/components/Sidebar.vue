@@ -111,7 +111,9 @@ const normalizedMenus = computed(() => {
             // 拼接完整路径
             let fullPath = child.path
             if (menu.path && !child.path.startsWith('/')) {
-              fullPath = menu.path + '/' + child.path
+              //fullPath = menu.path + '/' + child.path
+                const parent = menu.path.replace(/\/$/, '').replace(/^\//, '')
+                fullPath = '/' + parent + '/' + child.path
             }
             return {
               path: child.path,

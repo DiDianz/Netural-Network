@@ -1,7 +1,15 @@
 # models/menu.py
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Table, ForeignKey
 from datetime import datetime
 from core.database import Base
+
+# 角色-菜单关联表
+sys_role_menu = Table(
+    "sys_role_menu",
+    Base.metadata,
+    Column("role_id", Integer, ForeignKey("sys_role.role_id"), primary_key=True),
+    Column("menu_id", Integer, ForeignKey("sys_menu.menu_id"), primary_key=True),
+)
 
 
 class SysMenu(Base):

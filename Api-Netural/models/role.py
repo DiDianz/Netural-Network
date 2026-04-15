@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from core.database import Base
 from models.user import sys_user_role
+from models.menu import sys_role_menu
 
 
 class SysRole(Base):
@@ -19,3 +20,4 @@ class SysRole(Base):
     remark = Column(String(500), comment="备注")
 
     users = relationship("SysUser", secondary=sys_user_role, back_populates="roles")
+    menus = relationship("SysMenu", secondary=sys_role_menu, lazy="joined")
