@@ -98,6 +98,8 @@ async function handleModelChange(key) {
   try {
     await switchModel(key)
     ElMessage.success('已切换到 ' + key.toUpperCase() + ' 模型')
+    // 重新加载模型列表，更新"当前"标签
+    await loadModels()
     if (connectionState.value === 'open') {
       stopStream()
       setTimeout(() => {
