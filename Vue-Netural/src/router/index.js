@@ -96,13 +96,13 @@ const routes = [
       },
       // ========== PLC 设备管理 (新增) ==========
       {
-        path: 'plc/device',
+        path: 'device',
         name: 'PlcDevice',
         component: () => import('../views/prediction/plc/device/index.vue'),
         meta: { title: 'PLC设备管理', icon: 'cpu' }
       },
       {
-        path: 'plc/point',
+        path: 'point',
         name: 'PlcPoint',
         component: () => import('../views/prediction/plc/point/index.vue'),
         meta: { title: 'PLC点位管理', icon: 'list' }
