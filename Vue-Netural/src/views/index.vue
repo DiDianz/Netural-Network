@@ -1,158 +1,129 @@
-<!-- src/views/index.vue — 系统首页仪表盘 -->
+<!-- src/views/index.vue — 美化版仪表盘 -->
 <template>
   <div class="dashboard">
-    <!-- 欢迎卡片 -->
-    <div class="welcome-card">
-      <div class="welcome-left">
-        <h2>{{ greeting }}，{{ userStore.nickName || userStore.userName }} 👋</h2>
-        <p>神经网络预测系统 — 实时预测 · 智能分析 · PLC 数据采集</p>
+    <!-- 顶部 Hero 区 -->
+    <div class="hero">
+      <div class="hero-bg">
+        <div class="hero-orb orb-1"></div>
+        <div class="hero-orb orb-2"></div>
+        <div class="hero-orb orb-3"></div>
       </div>
-      <div class="welcome-right">
-        <div class="time-display">{{ currentTime }}</div>
-        <div class="date-display">{{ currentDate }}</div>
-      </div>
-    </div>
-
-    <!-- 统计卡片 -->
-    <div class="stats-grid">
-      <div class="stat-card" @click="$router.push('/prediction/models')">
-        <div class="stat-icon" style="background: rgba(74,158,255,0.12); color: #4a9eff;">
-          <el-icon :size="22"><DataAnalysis /></el-icon>
+      <div class="hero-content">
+        <div class="hero-left">
+          <div class="hero-greeting">{{ greeting }}</div>
+          <h1 class="hero-name">{{ userStore.nickName || userStore.userName }}</h1>
+          <p class="hero-subtitle">神经网络预测系统 · 实时预测 · 智能分析 · PLC 数据采集</p>
         </div>
-        <div class="stat-body">
-          <div class="stat-value">{{ modelStats.total }}</div>
-          <div class="stat-label">模型总数</div>
-        </div>
-        <div class="stat-extra">
-          <el-tag type="success" size="small" v-if="modelStats.current">{{ modelStats.current }}</el-tag>
-        </div>
-      </div>
-
-      <div class="stat-card" @click="$router.push('/prediction/device')">
-        <div class="stat-icon" style="background: rgba(251,191,36,0.12); color: #fbbf24;">
-          <el-icon :size="22"><Cpu /></el-icon>
-        </div>
-        <div class="stat-body">
-          <div class="stat-value">{{ plcStats.total }}</div>
-          <div class="stat-label">PLC 设备</div>
-        </div>
-        <div class="stat-extra">
-          <el-tag type="success" size="small" v-if="plcStats.connected > 0">{{ plcStats.connected }} 已连接</el-tag>
-          <el-tag type="info" size="small" v-else>全部离线</el-tag>
-        </div>
-      </div>
-
-      <div class="stat-card" @click="$router.push('/prediction/history')">
-        <div class="stat-icon" style="background: rgba(74,222,128,0.12); color: #4ade80;">
-          <el-icon :size="22"><TrendCharts /></el-icon>
-        </div>
-        <div class="stat-body">
-          <div class="stat-value">{{ predictCount }}</div>
-          <div class="stat-label">预测记录</div>
-        </div>
-      </div>
-
-      <div class="stat-card" @click="$router.push('/prediction/training')">
-        <div class="stat-icon" style="background: rgba(167,139,250,0.12); color: #a78bfa;">
-          <el-icon :size="22"><Timer /></el-icon>
-        </div>
-        <div class="stat-body">
-          <div class="stat-value">{{ trainStats.total }}</div>
-          <div class="stat-label">训练次数</div>
-        </div>
-        <div class="stat-extra">
-          <el-tag :type="trainStats.isTraining ? 'warning' : 'info'" size="small" effect="dark">
-            {{ trainStats.isTraining ? '训练中...' : '空闲' }}
-          </el-tag>
+        <div class="hero-right">
+          <div class="hero-time">{{ currentTime }}</div>
+          <div class="hero-date">{{ currentDate }}</div>
+          <div class="hero-status">
+            <span class="status-dot" :class="hasOnlinePlc ? 'dot-on' : 'dot-off'"></span>
+            <span>{{ hasOnlinePlc ? `${plcStats.connected} 台 PLC 在线` : 'PLC 全部离线' }}</span>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 中间区域 -->
-    <div class="main-grid">
-      <!-- 左侧：模型状态 -->
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title"><el-icon><DataAnalysis /></el-icon> 模型状态</span>
-          <el-button text type="primary" size="small" @click="$router.push('/prediction/models')">管理 →</el-button>
+    <!-- 统计卡片行 -->
+    <div class="stats-row">
+      <div class="stat-card" v-for="s in statCards" :key="s.label" @click="$router.push(s.path)">
+        <div class="stat-glow" :style="{ background: s.glow }"></div>
+        <div class="stat-icon" :style="{ background: s.iconBg, color: s.iconColor }">
+          <el-icon :size="22"><component :is="s.icon" /></el-icon>
         </div>
-        <div class="panel-body">
-          <div v-for="m in models" :key="m.key" class="model-item">
-            <div class="model-left">
-              <span class="model-name">{{ m.display_name }}</span>
-              <el-tag v-if="m.is_current" type="success" size="small" effect="dark">当前</el-tag>
+        <div class="stat-info">
+          <div class="stat-number">{{ s.value }}</div>
+          <div class="stat-label">{{ s.label }}</div>
+        </div>
+        <div class="stat-badge" v-if="s.badge">
+          <el-tag :type="s.badgeType" size="small" effect="dark" round>{{ s.badge }}</el-tag>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主内容区 -->
+    <div class="content-grid">
+      <!-- 模型状态 -->
+      <div class="panel glass">
+        <div class="panel-head">
+          <div class="panel-title">
+            <div class="panel-icon blue"><el-icon><DataAnalysis /></el-icon></div>
+            <span>模型状态</span>
+          </div>
+          <el-button text type="primary" size="small" @click="$router.push('/prediction/models')">
+            查看全部 <el-icon class="ml-4"><ArrowRight /></el-icon>
+          </el-button>
+        </div>
+        <div class="panel-content">
+          <div v-for="m in models" :key="m.key" class="list-item">
+            <div class="list-left">
+              <div class="item-avatar blue">
+                <el-icon :size="16"><Cpu /></el-icon>
+              </div>
+              <div>
+                <div class="item-name">{{ m.display_name }}</div>
+                <div class="item-sub">{{ m.key.toUpperCase() }} 模型</div>
+              </div>
             </div>
-            <div class="model-right">
-              <el-tag :type="m.loaded ? 'success' : 'info'" size="small" plain>
+            <div class="list-right">
+              <el-tag v-if="m.is_current" type="success" size="small" effect="dark" round>当前使用</el-tag>
+              <el-tag :type="m.loaded ? 'success' : 'info'" size="small" plain round>
                 {{ m.loaded ? '已加载' : '未加载' }}
               </el-tag>
             </div>
           </div>
-          <el-empty v-if="models.length === 0" description="暂无模型" :image-size="60" />
+          <el-empty v-if="models.length === 0" description="暂无模型" :image-size="50" />
         </div>
       </div>
 
-      <!-- 右侧：PLC 设备状态 -->
-      <div class="panel">
-        <div class="panel-header">
-          <span class="panel-title"><el-icon><Cpu /></el-icon> PLC 设备</span>
-          <el-button text type="primary" size="small" @click="$router.push('/prediction/device')">管理 →</el-button>
+      <!-- PLC 设备 -->
+      <div class="panel glass">
+        <div class="panel-head">
+          <div class="panel-title">
+            <div class="panel-icon amber"><el-icon><Cpu /></el-icon></div>
+            <span>PLC 设备</span>
+          </div>
+          <el-button text type="primary" size="small" @click="$router.push('/prediction/device')">
+            管理设备 <el-icon class="ml-4"><ArrowRight /></el-icon>
+          </el-button>
         </div>
-        <div class="panel-body">
-          <div v-for="d in plcDevices" :key="d.id" class="plc-item">
-            <div class="plc-left">
-              <span class="plc-dot" :class="d.status === 'connected' ? 'dot-online' : 'dot-offline'"></span>
-              <span class="plc-name">{{ d.name }}</span>
+        <div class="panel-content">
+          <div v-for="d in plcDevices" :key="d.id" class="list-item">
+            <div class="list-left">
+              <div class="item-avatar" :class="d.status === 'connected' ? 'green' : 'grey'">
+                <el-icon :size="16"><Connection /></el-icon>
+              </div>
+              <div>
+                <div class="item-name">{{ d.name }}</div>
+                <div class="item-sub mono">{{ d.ip }}:{{ d.port }} · {{ d.point_count || 0 }} 点位</div>
+              </div>
             </div>
-            <div class="plc-right">
-              <span class="plc-ip mono">{{ d.ip }}:{{ d.port }}</span>
-              <el-tag size="small" :type="d.status === 'connected' ? 'success' : 'info'" plain>
+            <div class="list-right">
+              <span class="pulse-dot" :class="d.status === 'connected' ? 'on' : 'off'"></span>
+              <el-tag :type="d.status === 'connected' ? 'success' : 'info'" size="small" plain round>
                 {{ d.status === 'connected' ? '在线' : '离线' }}
               </el-tag>
             </div>
           </div>
-          <el-empty v-if="plcDevices.length === 0" description="暂无设备" :image-size="60" />
+          <el-empty v-if="plcDevices.length === 0" description="暂无设备" :image-size="50">
+            <el-button type="primary" size="small" @click="$router.push('/prediction/device')">添加设备</el-button>
+          </el-empty>
         </div>
       </div>
     </div>
 
-    <!-- 底部：快捷操作 -->
-    <div class="quick-actions">
-      <div class="action-card" @click="$router.push('/prediction/realtime')">
-        <div class="action-icon" style="background: rgba(74,158,255,0.12); color: #4a9eff;">
-          <el-icon :size="22"><Monitor /></el-icon>
+    <!-- 快捷入口 -->
+    <div class="quick-row">
+      <div class="quick-card" v-for="q in quickLinks" :key="q.title" @click="$router.push(q.path)">
+        <div class="quick-icon" :style="{ background: q.iconBg }">
+          <el-icon :size="20" :style="{ color: q.iconColor }"><component :is="q.icon" /></el-icon>
         </div>
-        <div class="action-info">
-          <span class="action-title">实时预测</span>
-          <span class="action-desc">启动 SSE 实时预测流</span>
+        <div class="quick-text">
+          <span class="quick-title">{{ q.title }}</span>
+          <span class="quick-desc">{{ q.desc }}</span>
         </div>
-      </div>
-      <div class="action-card" @click="$router.push('/prediction/training')">
-        <div class="action-icon" style="background: rgba(167,139,250,0.12); color: #a78bfa;">
-          <el-icon :size="22"><VideoPlay /></el-icon>
-        </div>
-        <div class="action-info">
-          <span class="action-title">模型训练</span>
-          <span class="action-desc">训练 LSTM / Transformer</span>
-        </div>
-      </div>
-      <div class="action-card" @click="$router.push('/prediction/device')">
-        <div class="action-icon" style="background: rgba(251,191,36,0.12); color: #fbbf24;">
-          <el-icon :size="22"><Connection /></el-icon>
-        </div>
-        <div class="action-info">
-          <span class="action-title">PLC 管理</span>
-          <span class="action-desc">设备连接 · 点位配置</span>
-        </div>
-      </div>
-      <div class="action-card" @click="$router.push('/prediction/history')">
-        <div class="action-icon" style="background: rgba(74,222,128,0.12); color: #4ade80;">
-          <el-icon :size="22"><Document /></el-icon>
-        </div>
-        <div class="action-info">
-          <span class="action-title">历史记录</span>
-          <span class="action-desc">查看预测历史数据</span>
-        </div>
+        <el-icon class="quick-arrow"><ArrowRight /></el-icon>
       </div>
     </div>
   </div>
@@ -162,7 +133,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   DataAnalysis, Cpu, TrendCharts, Timer,
-  Monitor, VideoPlay, Connection, Document
+  Monitor, VideoPlay, Connection, Document,
+  ArrowRight
 } from '@element-plus/icons-vue'
 import { useUserStore } from '../stores/user'
 import { getModelList, getTrainHistory } from '../api/model'
@@ -170,7 +142,6 @@ import { getPlcDeviceList } from '../api/plc'
 import request from '../api/request'
 
 const userStore = useUserStore()
-
 const currentTime = ref('')
 const currentDate = ref('')
 const models = ref([])
@@ -180,75 +151,89 @@ const trainStats = ref({ total: 0, isTraining: false })
 
 const greeting = computed(() => {
   const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 9) return '早上好'
-  if (h < 12) return '上午好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  if (h < 22) return '晚上好'
-  return '夜深了'
+  if (h < 6) return '🌙 夜深了'
+  if (h < 9) return '🌅 早上好'
+  if (h < 12) return '☀️ 上午好'
+  if (h < 14) return '🌤 中午好'
+  if (h < 18) return '🌇 下午好'
+  if (h < 22) return '🌆 晚上好'
+  return '🌙 夜深了'
 })
-
-const modelStats = computed(() => ({
-  total: models.value.length,
-  current: models.value.find(m => m.is_current)?.display_name || ''
-}))
 
 const plcStats = computed(() => ({
   total: plcDevices.value.length,
   connected: plcDevices.value.filter(d => d.status === 'connected').length
 }))
 
+const hasOnlinePlc = computed(() => plcStats.value.connected > 0)
+
+const statCards = computed(() => [
+  {
+    label: '神经网络模型', value: models.value.length,
+    icon: DataAnalysis, path: '/prediction/models',
+    iconBg: 'rgba(74,158,255,0.12)', iconColor: '#4a9eff',
+    glow: 'radial-gradient(circle, rgba(74,158,255,0.08) 0%, transparent 70%)',
+    badge: models.value.find(m => m.is_current)?.display_name || null,
+    badgeType: 'success'
+  },
+  {
+    label: 'PLC 设备', value: plcStats.value.total,
+    icon: Cpu, path: '/prediction/device',
+    iconBg: 'rgba(251,191,36,0.12)', iconColor: '#fbbf24',
+    glow: 'radial-gradient(circle, rgba(251,191,36,0.08) 0%, transparent 70%)',
+    badge: plcStats.value.connected > 0 ? `${plcStats.value.connected} 在线` : '全部离线',
+    badgeType: plcStats.value.connected > 0 ? 'success' : 'info'
+  },
+  {
+    label: '预测记录', value: predictCount.value,
+    icon: TrendCharts, path: '/prediction/history',
+    iconBg: 'rgba(74,222,128,0.12)', iconColor: '#4ade80',
+    glow: 'radial-gradient(circle, rgba(74,222,128,0.08) 0%, transparent 70%)',
+    badge: null, badgeType: 'info'
+  },
+  {
+    label: '训练次数', value: trainStats.value.total,
+    icon: Timer, path: '/prediction/training',
+    iconBg: 'rgba(167,139,250,0.12)', iconColor: '#a78bfa',
+    glow: 'radial-gradient(circle, rgba(167,139,250,0.08) 0%, transparent 70%)',
+    badge: trainStats.value.isTraining ? '训练中...' : null,
+    badgeType: 'warning'
+  }
+])
+
+const quickLinks = [
+  { title: '实时预测', desc: 'SSE 实时预测流', path: '/prediction/realtime', icon: Monitor, iconBg: 'rgba(74,158,255,0.1)', iconColor: '#4a9eff' },
+  { title: '模型训练', desc: 'LSTM / Transformer', path: '/prediction/training', icon: VideoPlay, iconBg: 'rgba(167,139,250,0.1)', iconColor: '#a78bfa' },
+  { title: 'PLC 管理', desc: '设备连接 · 点位配置', path: '/prediction/device', icon: Connection, iconBg: 'rgba(251,191,36,0.1)', iconColor: '#fbbf24' },
+  { title: '历史记录', desc: '查看预测历史数据', path: '/prediction/history', icon: Document, iconBg: 'rgba(74,222,128,0.1)', iconColor: '#4ade80' },
+]
+
 function updateTime() {
   const now = new Date()
   currentTime.value = now.toLocaleTimeString('zh-CN', { hour12: false })
-  currentDate.value = now.toLocaleDateString('zh-CN', {
-    year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
-  })
+  currentDate.value = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
 }
 
 async function loadModels() {
-  try {
-    const res = await getModelList()
-    models.value = res.data || res || []
-  } catch (e) { /* ignore */ }
+  try { const res = await getModelList(); models.value = res.data || res || [] } catch (e) {}
 }
-
 async function loadPlcDevices() {
-  try {
-    const res = await getPlcDeviceList()
-    plcDevices.value = res.data || []
-  } catch (e) { /* ignore */ }
+  try { const res = await getPlcDeviceList(); plcDevices.value = res.data || [] } catch (e) {}
 }
-
 async function loadPredictCount() {
-  try {
-    const res = await request.get('/predict/history', { params: { limit: 1 } })
-    predictCount.value = res.total || 0
-  } catch (e) { /* ignore */ }
+  try { const res = await request.get('/predict/history', { params: { limit: 1 } }); predictCount.value = res.total || 0 } catch (e) {}
 }
-
 async function loadTrainStats() {
   try {
-    const [historyRes, statusRes] = await Promise.all([
-      getTrainHistory({ limit: 1 }),
-      request.get('/model/train/status')
-    ])
-    trainStats.value = {
-      total: historyRes.total || 0,
-      isTraining: statusRes.data?.is_training || false
-    }
-  } catch (e) { /* ignore */ }
+    const [h, s] = await Promise.all([getTrainHistory({ limit: 1 }), request.get('/model/train/status')])
+    trainStats.value = { total: h.total || 0, isTraining: s.data?.is_training || false }
+  } catch (e) {}
 }
 
 let timer
 onMounted(() => {
-  updateTime()
-  timer = setInterval(updateTime, 1000)
-  loadModels()
-  loadPlcDevices()
-  loadPredictCount()
-  loadTrainStats()
+  updateTime(); timer = setInterval(updateTime, 1000)
+  loadModels(); loadPlcDevices(); loadPredictCount(); loadTrainStats()
 })
 onUnmounted(() => clearInterval(timer))
 </script>
@@ -258,106 +243,195 @@ onUnmounted(() => clearInterval(timer))
   max-width: 1200px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
-/* 欢迎卡片 */
-.welcome-card {
+/* ====== Hero ====== */
+.hero {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-secondary);
+}
+
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hero-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+  animation: float 8s ease-in-out infinite alternate;
+}
+
+.orb-1 {
+  width: 300px; height: 300px;
+  background: var(--accent-glow);
+  top: -100px; left: -50px;
+}
+
+.orb-2 {
+  width: 200px; height: 200px;
+  background: rgba(167,139,250,0.15);
+  bottom: -80px; right: 100px;
+  animation-delay: -3s;
+}
+
+.orb-3 {
+  width: 150px; height: 150px;
+  background: rgba(74,222,128,0.1);
+  top: -30px; right: -20px;
+  animation-delay: -5s;
+}
+
+@keyframes float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(30px, 20px) scale(1.15); }
+}
+
+.hero-content {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 28px 32px;
-  background: linear-gradient(135deg, var(--accent-bg), var(--info-bg));
-  border: 1px solid var(--border-secondary);
-  border-radius: 12px;
+  padding: 32px 36px;
 }
 
-.welcome-left h2 {
-  font-size: 20px;
-  font-weight: 600;
+.hero-greeting {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+
+.hero-name {
+  font-size: 26px;
+  font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 6px;
 }
 
-.welcome-left p {
+.hero-subtitle {
   font-size: 13px;
   color: var(--text-muted);
+  letter-spacing: 0.3px;
 }
 
-.welcome-right { text-align: right; }
+.hero-right { text-align: right; }
 
-.time-display {
-  font-size: 28px;
+.hero-time {
+  font-size: 36px;
   font-weight: 700;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -1px;
 }
 
-.date-display {
+.hero-date {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
-/* 统计卡片 */
-.stats-grid {
+.hero-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-secondary);
+}
+
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+}
+
+.dot-on {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(74,222,128,0.5);
+}
+
+.dot-off { background: #555; }
+
+/* ====== 统计卡 ====== */
+.stats-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
 }
 
 .stat-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px 20px;
+  padding: 20px;
   background: var(--bg-card);
   border: 1px solid var(--border-secondary);
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s;
+  overflow: hidden;
 }
 
 .stat-card:hover {
   border-color: var(--border-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.2);
 }
 
+.stat-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.stat-card:hover .stat-glow { opacity: 1; }
+
 .stat-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 46px; height: 46px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 
-.stat-body {
-  flex: 1;
-  min-width: 0;
-}
+.stat-info { flex: 1; min-width: 0; }
 
-.stat-value {
-  font-size: 22px;
+.stat-number {
+  font-size: 26px;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
-.stat-extra {
-  flex-shrink: 0;
-}
+.stat-badge { flex-shrink: 0; }
 
-/* 面板 */
-.main-grid {
+/* ====== 面板 ====== */
+.content-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
@@ -366,144 +440,153 @@ onUnmounted(() => clearInterval(timer))
 .panel {
   background: var(--bg-card);
   border: 1px solid var(--border-secondary);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
 }
 
-.panel-header {
+.glass {
+  backdrop-filter: blur(10px);
+}
+
+.panel-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 20px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border-secondary);
 }
 
 .panel-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.panel-body {
-  padding: 8px 12px;
-  max-height: 260px;
+.panel-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-icon.blue { background: rgba(74,158,255,0.12); color: #4a9eff; }
+.panel-icon.amber { background: rgba(251,191,36,0.12); color: #fbbf24; }
+
+.panel-content {
+  padding: 6px 12px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
-/* 模型列表 */
-.model-item {
+.list-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   transition: background 0.15s;
 }
 
-.model-item:hover {
+.list-item:hover {
   background: var(--accent-bg-light);
 }
 
-.model-left {
+.list-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
-.model-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-/* PLC 列表 */
-.plc-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 8px;
-  transition: background 0.15s;
-}
-
-.plc-item:hover {
-  background: var(--accent-bg-light);
-}
-
-.plc-left {
+.item-avatar {
+  width: 36px; height: 36px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.plc-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  justify-content: center;
   flex-shrink: 0;
 }
 
-.dot-online {
-  background: #67c23a;
-  box-shadow: 0 0 6px rgba(103,194,58,0.5);
-}
+.item-avatar.blue { background: rgba(74,158,255,0.12); color: #4a9eff; }
+.item-avatar.green { background: rgba(74,222,128,0.12); color: #4ade80; }
+.item-avatar.amber { background: rgba(251,191,36,0.12); color: #fbbf24; }
+.item-avatar.grey { background: rgba(100,100,100,0.12); color: #888; }
 
-.dot-offline {
-  background: #666;
-}
-
-.plc-name {
+.item-name {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
 }
 
-.plc-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.plc-ip {
+.item-sub {
   font-size: 12px;
   color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .mono {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px !important;
 }
 
-/* 快捷操作 */
-.quick-actions {
+.list-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pulse-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pulse-dot.on {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(74,222,128,0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.pulse-dot.off { background: #555; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.ml-4 { margin-left: 4px; }
+
+/* ====== 快捷入口 ====== */
+.quick-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 14px;
 }
 
-.action-card {
+.quick-card {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 20px;
+  padding: 18px 20px;
   background: var(--bg-card);
   border: 1px solid var(--border-secondary);
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s;
 }
 
-.action-card:hover {
+.quick-card:hover {
   border-color: var(--border-hover);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
 }
 
-.action-icon {
-  width: 44px;
-  height: 44px;
+.quick-icon {
+  width: 42px; height: 42px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -511,27 +594,39 @@ onUnmounted(() => clearInterval(timer))
   flex-shrink: 0;
 }
 
-.action-title {
+.quick-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quick-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  display: block;
-  margin-bottom: 3px;
 }
 
-.action-desc {
+.quick-desc {
   font-size: 12px;
   color: var(--text-muted);
 }
 
-/* 响应式 */
-@media (max-width: 900px) {
-  .stats-grid,
-  .quick-actions {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
+.quick-arrow {
+  color: var(--text-muted);
+  transition: transform 0.2s, color 0.2s;
+}
+
+.quick-card:hover .quick-arrow {
+  transform: translateX(3px);
+  color: var(--accent);
+}
+
+/* ====== 响应式 ====== */
+@media (max-width: 1000px) {
+  .stats-row, .quick-row { grid-template-columns: repeat(2, 1fr); }
+  .content-grid { grid-template-columns: 1fr; }
+  .hero-content { flex-direction: column; gap: 16px; text-align: center; }
+  .hero-right { text-align: center; }
 }
 </style>
