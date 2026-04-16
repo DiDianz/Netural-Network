@@ -1,10 +1,8 @@
-// src/router/index.js
+// src/router/index.js — 添加 PLC 设备管理路由
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '../utils/auth'
 import Layout from '../layout/index.vue'
-import path from 'node:path'
 
-// ========== 所有路由全部写死 ==========
 const routes = [
   // 登录（不需要登录）
   {
@@ -91,10 +89,23 @@ const routes = [
         meta: { title: '模型管理', icon: 'code' }
       },
       {
-        path:'training',
-        name:'PredictionTraining',
+        path: 'training',
+        name: 'PredictionTraining',
         component: () => import('../views/prediction/training/index.vue'),
         meta: { title: '模型训练', icon: 'cpu' }
+      },
+      // ========== PLC 设备管理 (新增) ==========
+      {
+        path: 'plc/device',
+        name: 'PlcDevice',
+        component: () => import('../views/prediction/plc/device/index.vue'),
+        meta: { title: 'PLC设备管理', icon: 'cpu' }
+      },
+      {
+        path: 'plc/point',
+        name: 'PlcPoint',
+        component: () => import('../views/prediction/plc/point/index.vue'),
+        meta: { title: 'PLC点位管理', icon: 'list' }
       }
     ]
   },
@@ -112,9 +123,8 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 })
 })
 
-// ========== 路由守卫（极简版）==========
+// 路由守卫
 router.beforeEach(async (to, from, next) => {
-  // 设置标题
   document.title = (to.meta && to.meta.title)
     ? to.meta.title + ' - Neural Predict'
     : 'Neural Predict'
@@ -122,7 +132,6 @@ router.beforeEach(async (to, from, next) => {
   const hasToken = getToken()
 
   if (to.path === '/login') {
-    // 已登录访问登录页 → 跳首页
     if (hasToken) {
       next({ path: '/' })
     } else {
@@ -132,26 +141,21 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (hasToken) {
-    // 已登录，获取用户信息（如果还没有）
     try {
       const { useUserStore } = await import('../stores/user')
       const userStore = useUserStore()
-
       if (!userStore.userId) {
         await userStore.fetchUserInfo()
       }
-
       next()
     } catch (error) {
       console.error('获取用户信息失败:', error)
-      // Token 无效，清除并跳转登录
       const { useUserStore } = await import('../stores/user')
       const userStore = useUserStore()
       userStore.logout()
       next('/login')
     }
   } else {
-    // 未登录
     next('/login')
   }
 })
