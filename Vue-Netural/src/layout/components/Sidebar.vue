@@ -26,6 +26,12 @@
         :unique-opened="true"
         router
       >
+        <!-- 首页（固定） -->
+        <el-menu-item index="/index">
+          <el-icon><HomeFilled /></el-icon>
+          <template #title>首页</template>
+        </el-menu-item>
+
         <!-- 遍历菜单，兼容两种格式 -->
         <template v-for="menu in normalizedMenus" :key="menu.path">
           <!-- 有子菜单 -->
@@ -71,7 +77,6 @@ const props = defineProps({
 const route = useRoute()
 const activeMenu = computed(() => route.path)
 
-// 图标映射
 const iconMap = {
   home: HomeFilled,
   chart: TrendCharts,
@@ -84,13 +89,14 @@ const iconMap = {
   code: Document,
   list: List,
   menu: IconMenu,
+  设备: Setting,
+  操作日志: Document,
 }
 
 function getIcon(name) {
   return iconMap[name] || Document
 }
 
-// 标准化菜单数据（兼容后端返回格式和默认格式）
 const normalizedMenus = computed(() => {
   return props.menus
     .filter(m => !m.hidden)
@@ -108,12 +114,10 @@ const normalizedMenus = computed(() => {
           .filter(c => !c.hidden)
           .map(child => {
             const childMeta = child.meta || {}
-            // 拼接完整路径
             let fullPath = child.path
             if (menu.path && !child.path.startsWith('/')) {
-              //fullPath = menu.path + '/' + child.path
-                const parent = menu.path.replace(/\/$/, '').replace(/^\//, '')
-                fullPath = '/' + parent + '/' + child.path
+              const parent = menu.path.replace(/\/$/, '').replace(/^\//, '')
+              fullPath = '/' + parent + '/' + child.path
             }
             return {
               path: child.path,
@@ -129,7 +133,6 @@ const normalizedMenus = computed(() => {
 })
 </script>
 
-<!-- src/layout/components/Sidebar.vue（只改 style 部分） -->
 <style scoped>
 .sidebar-container {
   width: 220px;
@@ -208,7 +211,6 @@ const normalizedMenus = computed(() => {
   color: var(--accent) !important;
 }
 
-/* 子菜单弹出框 */
 .sidebar-menu-wrap :deep(.el-menu--popup) {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-secondary) !important;
