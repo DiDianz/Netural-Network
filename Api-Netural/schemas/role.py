@@ -28,6 +28,7 @@ class RoleCreate(BaseModel):
 
 
 class RoleUpdate(BaseModel):
+    role_id: int
     role_name: str
     role_key: str
     sort: int = 0

@@ -37,6 +37,7 @@ class MenuCreate(BaseModel):
 
 
 class MenuUpdate(BaseModel):
+    menu_id: int
     menu_name: str
     parent_id: int = 0
     order_num: int = 0

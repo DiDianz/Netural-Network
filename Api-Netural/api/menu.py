@@ -60,13 +60,13 @@
 #     return parts[0] + "".join(p.capitalize() for p in parts[1:])
 
 # api/menu.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
 from deps import get_current_user
 from models.user import SysUser
 from models.menu import SysMenu
-from schemas.menu import MenuItem
+from schemas.menu import MenuItem, MenuCreate, MenuUpdate
 
 router = APIRouter(prefix="/system/menu", tags=["菜单管理"])
 
@@ -75,21 +75,21 @@ def build_menu_tree(menus: list[SysMenu], parent_id: int = 0) -> list[MenuItem]:
     """递归构建菜单树"""
     tree = []
     for m in menus:
-        if (m.parent_id or 0) == parent_id: # type: ignore
-            children = build_menu_tree(menus, m.menu_id)# type: ignore
+        if (m.parent_id or 0) == parent_id:
+            children = build_menu_tree(menus, m.menu_id)
             tree.append(MenuItem(
-                menu_id=m.menu_id,# type: ignore
-                menu_name=m.menu_name,# type: ignore
-                parent_id=m.parent_id or 0,# type: ignore
-                order_num=m.order_num or 0,# type: ignore
-                path=m.path or "",# type: ignore
-                component=m.component or "",# type: ignore
-                menu_type=m.menu_type or "",# type: ignore
-                visible=m.visible or "0",# type: ignore
-                status=m.status or "0",# type: ignore
-                icon=m.icon or "#",# type: ignore# type: ignore
-                create_time=m.create_time,# type: ignore
-                remark=m.remark or "",# type: ignore
+                menu_id=m.menu_id,
+                menu_name=m.menu_name,
+                parent_id=m.parent_id or 0,
+                order_num=m.order_num or 0,
+                path=m.path or "",
+                component=m.component or "",
+                menu_type=m.menu_type or "",
+                visible=m.visible or "0",
+                status=m.status or "0",
+                icon=m.icon or "#",
+                create_time=m.create_time,
+                remark=m.remark or "",
                 children=children,
             ))
     tree.sort(key=lambda x: x.order_num)
@@ -99,12 +99,11 @@ def build_menu_tree(menus: list[SysMenu], parent_id: int = 0) -> list[MenuItem]:
 def to_sidebar_format(menus: list[SysMenu]) -> list[dict]:
     """转换为前端 Sidebar 需要的格式"""
     tree = []
-    # 一级菜单
     for m in menus:
-        if (m.parent_id or 0) == 0:# type: ignore
+        if (m.parent_id or 0) == 0:
             node = {
                 "name": m.menu_name,
-                "path": "/" + m.path if m.path and not m.path.startswith("/") else m.path,# type: ignore
+                "path": "/" + m.path if m.path and not m.path.startswith("/") else m.path,
                 "hidden": m.visible != "0",
                 "meta": {
                     "title": m.menu_name,
@@ -112,9 +111,8 @@ def to_sidebar_format(menus: list[SysMenu]) -> list[dict]:
                 },
                 "children": [],
             }
-            # 二级菜单
             for c in menus:
-                if (c.parent_id or 0) == m.menu_id:# type: ignore
+                if (c.parent_id or 0) == m.menu_id:
                     node["children"].append({
                         "name": c.menu_name,
                         "path": c.path,
@@ -160,3 +158,99 @@ async def get_menu_tree_select(
         SysMenu.status == "0"
     ).order_by(SysMenu.order_num).all()
     return build_menu_tree(menus)
+
+
+@router.get("/get/{menu_id}")
+async def get_menu(
+    menu_id: int,
+    current_user: SysUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取菜单详情"""
+    menu = db.query(SysMenu).filter(SysMenu.menu_id == menu_id).first()
+    if not menu:
+        raise HTTPException(status_code=404, detail="菜单不存在")
+    return {
+        "menu_id": menu.menu_id,
+        "menu_name": menu.menu_name,
+        "parent_id": menu.parent_id or 0,
+        "order_num": menu.order_num or 0,
+        "path": menu.path or "",
+        "component": menu.component or "",
+        "menu_type": menu.menu_type or "",
+        "visible": menu.visible or "0",
+        "status": menu.status or "0",
+        "icon": menu.icon or "#",
+        "remark": menu.remark or "",
+    }
+
+
+@router.post("/add")
+async def add_menu(
+    data: MenuCreate,
+    current_user: SysUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """新增菜单"""
+    menu = SysMenu(
+        menu_name=data.menu_name,
+        parent_id=data.parent_id,
+        order_num=data.order_num,
+        path=data.path,
+        component=data.component,
+        menu_type=data.menu_type,
+        visible=data.visible,
+        status=data.status,
+        icon=data.icon,
+        remark=data.remark,
+    )
+    db.add(menu)
+    db.commit()
+    db.refresh(menu)
+    return {"msg": "新增成功", "menu_id": menu.menu_id}
+
+
+@router.put("/update")
+async def update_menu(
+    data: MenuUpdate,
+    current_user: SysUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """修改菜单"""
+    menu = db.query(SysMenu).filter(SysMenu.menu_id == data.menu_id).first()
+    if not menu:
+        raise HTTPException(status_code=404, detail="菜单不存在")
+
+    menu.menu_name = data.menu_name
+    menu.parent_id = data.parent_id
+    menu.order_num = data.order_num
+    menu.path = data.path
+    menu.component = data.component
+    menu.menu_type = data.menu_type
+    menu.visible = data.visible
+    menu.status = data.status
+    menu.icon = data.icon
+    menu.remark = data.remark
+    db.commit()
+    return {"msg": "修改成功"}
+
+
+@router.delete("/delete/{menu_id}")
+async def delete_menu(
+    menu_id: int,
+    current_user: SysUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """删除菜单"""
+    menu = db.query(SysMenu).filter(SysMenu.menu_id == menu_id).first()
+    if not menu:
+        raise HTTPException(status_code=404, detail="菜单不存在")
+
+    # 检查是否有子菜单
+    children = db.query(SysMenu).filter(SysMenu.parent_id == menu_id).first()
+    if children:
+        raise HTTPException(status_code=400, detail="存在子菜单，不允许删除")
+
+    db.delete(menu)
+    db.commit()
+    return {"msg": "删除成功"}
