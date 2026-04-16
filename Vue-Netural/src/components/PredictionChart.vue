@@ -70,13 +70,19 @@ function initChart() {
   })
 }
 
-// ========== 关键修改：移除 deep:true，用数据长度判断 ==========
+// 用 times.length 的变化来触发更新（避免 deep watch 的性能问题）
 watch(
   () => props.chartData.times.length,
-  function () {
+  function (newLen) {
     const chart = chartInstance.value
     const data = props.chartData
-    if (!chart || !data.times.length) return
+    if (!chart) return
+
+    // 数据被清空时，重置图表 series（切换模型的中间态）
+    if (newLen === 0) {
+      chart.setOption({ series: [] }, { notMerge: false, lazyUpdate: true })
+      return
+    }
 
     const series = [{
       name: '预测值', type: 'line', data: data.predictions,
