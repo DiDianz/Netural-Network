@@ -1,0 +1,14 @@
+{
+  "d566cfd3": {
+    "model_id": "d566cfd3",
+    "model_key": "lstm",
+    "display_name": "LSTM + Attention",
+    "name": "LSTM + Attention_20260417_50轮_val1.0089",
+    "filename": "lstm_d566cfd3.pth",
+    "epochs": 50,
+    "best_val_loss": 1.008905,
+    "trained_at": "2026-04-17 14:36:33",
+    "remark": "随机数据训练 50轮",
+    "file_size_kb": 1095.3
+  }
+}
