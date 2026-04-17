@@ -84,7 +84,7 @@
             <div class="panel-icon amber"><el-icon><Cpu /></el-icon></div>
             <span>PLC 设备</span>
           </div>
-          <el-button text type="primary" size="small" @click="$router.push('/prediction/device')">
+          <el-button text type="primary" size="small" @click="$router.push('/plc/device')">
             管理设备 <el-icon class="ml-4"><ArrowRight /></el-icon>
           </el-button>
         </div>
