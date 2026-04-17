@@ -66,7 +66,8 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Monitor, Setting, User, List, Document,
-  TrendCharts, Menu as IconMenu, HomeFilled
+  TrendCharts, Menu as IconMenu, HomeFilled,
+  Folder, Connection
 } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -89,6 +90,8 @@ const iconMap = {
   code: Document,
   list: List,
   menu: IconMenu,
+  folder: Folder,
+  international: Connection,
   设备: Setting,
   操作日志: Document,
 }

@@ -78,6 +78,34 @@ function getDefaultMenus() {
           name: 'PredictionModels',
           path: 'models',
           meta: { title: '模型管理', icon: 'code' }
+        },
+        {
+          name: 'PredictionSavedModels',
+          path: 'saved-models',
+          meta: { title: '已保存模型', icon: 'folder' }
+        },
+        {
+          name: 'PredictionTraining',
+          path: 'training',
+          meta: { title: '模型训练', icon: 'cpu' }
+        }
+      ]
+    },
+    {
+      name: 'Plc',
+      path: '/plc',
+      hidden: false,
+      meta: { title: 'PLC管理', icon: 'international' },
+      children: [
+        {
+          name: 'PlcDevice',
+          path: 'device',
+          meta: { title: 'PLC设备管理', icon: 'cpu' }
+        },
+        {
+          name: 'PlcPoint',
+          path: 'point',
+          meta: { title: 'PLC点位管理', icon: 'list' }
         }
       ]
     }
