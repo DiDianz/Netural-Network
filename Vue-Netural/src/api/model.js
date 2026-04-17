@@ -22,6 +22,7 @@ export function getSavedModels(modelKey) {
 }
 export function deleteSavedModel(modelId) { return request.delete(`/model/saved/${modelId}`) }
 export function loadSavedModel(modelId) { return request.post(`/model/saved/${modelId}/load`) }
+export function renameSavedModel(modelId, name) { return request.put(`/model/saved/${modelId}/rename`, { name }) }
 
 // ========== 文件上传 ==========
 export function uploadFile(file) {

@@ -48,7 +48,7 @@ async def start_training(body: TrainRequest, db: Session = Depends(get_db)):
             model_manager.train_model(
                 model_key=body.model_key, epochs=body.epochs,
                 lr=body.lr, batch_size=body.batch_size, db=db,
-                base_model_id=body.base_model_id
+                base_model_id=body.base_model_id, model_name=body.model_name
             )
         )
         msg = f"已开始训练 {body.model_key} 模型"
@@ -140,6 +140,7 @@ async def start_training_with_upload(
     lr: float = Query(0.001, gt=0, le=1),
     batch_size: int = Query(32, ge=1, le=256),
     base_model_id: str = Query(None, description="基础模型版本ID，用于继续训练"),
+    model_name: str = Query(None, description="自定义模型名称"),
     db: Session = Depends(get_db)
 ):
     if model_manager.training_state["is_training"]:
@@ -182,7 +183,7 @@ async def start_training_with_upload(
         model_manager.train_model_with_data1(
             model_key=model_key, data=combined, job_id=job_id,
             epochs=epochs, lr=lr, batch_size=batch_size, db=db,
-            base_model_id=base_model_id
+            base_model_id=base_model_id, model_name=model_name
         )
     )
     msg = f"已开始用上传数据训练 {model_key} 模型"
@@ -326,5 +327,18 @@ async def load_saved_model(model_id: str):
             raise HTTPException(status_code=404, detail="模型版本不存在")
         result = model_manager.load_model_weights(entry["model_key"], model_id)
         return {"code": 200, "data": result, "msg": "加载成功"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/saved/{model_id}/rename")
+async def rename_saved_model(model_id: str, body: dict):
+    """重命名一个已保存的模型版本"""
+    new_name = body.get("name", "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="名称不能为空")
+    try:
+        result = model_manager.rename_saved_model(model_id, new_name)
+        return {"code": 200, "data": result, "msg": "重命名成功"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

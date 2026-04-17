@@ -70,6 +70,24 @@
             <span class="model-id-badge">{{ row.model_id }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="名称" min-width="220">
+          <template #default="{ row }">
+            <div class="name-cell">
+              <template v-if="editingId === row.model_id">
+                <el-input v-model="editingName" size="small" style="width: 180px" @keyup.enter="confirmRename(row.model_id)"
+                  @keyup.escape="cancelRename" />
+                <el-button size="small" type="primary" @click="confirmRename(row.model_id)" :loading="renaming">✓</el-button>
+                <el-button size="small" @click="cancelRename">✕</el-button>
+              </template>
+              <template v-else>
+                <span class="model-name-text">{{ row.name || row.display_name }}</span>
+                <el-button size="small" text type="primary" @click="startRename(row)" style="margin-left: 4px">
+                  ✎
+                </el-button>
+              </template>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="模型类型" width="140">
           <template #default="{ row }">
             <el-tag :type="modelTagType(row.model_key)" size="small">{{ row.display_name }}</el-tag>
@@ -106,7 +124,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getModelList, switchModel, getSavedModels, deleteSavedModel, loadSavedModel } from '../../../api/model'
+import { getModelList, switchModel, getSavedModels, deleteSavedModel, loadSavedModel, renameSavedModel } from '../../../api/model'
 
 const router = useRouter()
 const models = ref([])
@@ -115,6 +133,9 @@ const switching = ref(null)
 const savedModels = ref([])
 const loadingSaved = ref(false)
 const filterModelKey = ref('')
+const editingId = ref(null)
+const editingName = ref('')
+const renaming = ref(false)
 
 const filteredSavedModels = computed(function () {
   if (!filterModelKey.value) return savedModels.value
@@ -166,6 +187,29 @@ async function handleDelete(modelId) {
     ElMessage.success('删除成功')
     await loadSavedModels()
   } catch (e) { ElMessage.error('删除失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message)) }
+}
+
+function startRename(row) {
+  editingId.value = row.model_id
+  editingName.value = row.name || row.display_name
+}
+
+function cancelRename() {
+  editingId.value = null
+  editingName.value = ''
+}
+
+async function confirmRename(modelId) {
+  if (!editingName.value.trim()) { ElMessage.warning('名称不能为空'); return }
+  renaming.value = true
+  try {
+    await renameSavedModel(modelId, editingName.value.trim())
+    ElMessage.success('重命名成功')
+    editingId.value = null
+    editingName.value = ''
+    await loadSavedModels()
+  } catch (e) { ElMessage.error('重命名失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message)) }
+  finally { renaming.value = false }
 }
 
 function goTrain(key) { router.push({ path: '/prediction/training', query: { model: key } }) }
@@ -370,5 +414,17 @@ function formatNumber(n) {
   font-size: 13px;
   color: var(--danger);
   font-weight: 600;
+}
+
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.model-name-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 </style>

@@ -115,6 +115,14 @@
       </div>
     </div>
 
+    <!-- 模型命名 -->
+    <div class="name-section">
+      <span class="config-label">模型名称:</span>
+      <el-input v-model="modelName" :placeholder="defaultModelName" style="width: 500px" clearable />
+      <el-button size="small" @click="modelName = ''" style="margin-left: 8px">重置为默认</el-button>
+      <span class="name-hint">留空则使用默认命名: {{ defaultModelName }}</span>
+    </div>
+
     <!-- 进度 -->
     <div class="progress-section" v-if="trainState.total_epochs > 0 || isTraining">
       <div v-if="isTraining && trainState.epoch === 0" class="waiting-msg">正在启动训练...</div>
@@ -236,6 +244,9 @@ const selectedBaseModelId = ref(null)
 const savedModels = ref([])
 const loadingSavedModels = ref(false)
 
+// 模型命名
+const modelName = ref('')
+
 const fileList = ref([])
 const uploadedFiles = ref([])
 const uploading = ref(false)
@@ -289,6 +300,12 @@ const modelDisplayName = computed(function () {
 
 const filteredSavedModels = computed(function () {
   return savedModels.value.filter(function (m) { return m.model_key === selectedModel.value })
+})
+
+const defaultModelName = computed(function () {
+  var d = new Date()
+  var dateStr = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0')
+  return modelDisplayName.value + '_' + dateStr + '_' + epochs.value + '轮'
 })
 
 // ===== 安全创建/获取 ECharts 实例 =====
@@ -882,6 +899,9 @@ async function handleStartRandomTrain() {
     if (modelSource.value === 'existing' && selectedBaseModelId.value) {
       params.base_model_id = selectedBaseModelId.value
     }
+    if (modelName.value.trim()) {
+      params.model_name = modelName.value.trim()
+    }
     await startTrain(params)
     ElMessage.success('训练已启动')
     isTraining.value = true
@@ -900,6 +920,9 @@ async function handleStartUploadTrain() {
     }
     if (modelSource.value === 'existing' && selectedBaseModelId.value) {
       params.base_model_id = selectedBaseModelId.value
+    }
+    if (modelName.value.trim()) {
+      params.model_name = modelName.value.trim()
     }
     await startTrainWithUpload(params)
     ElMessage.success('训练已启动')
@@ -1118,6 +1141,22 @@ async function handleDownloadTemplate(fmt) {
   font-size: 14px;
   color: var(--text-muted);
   flex-shrink: nowrap;
+}
+
+.name-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-secondary);
+  border-radius: 12px;
+}
+
+.name-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .upload-section {

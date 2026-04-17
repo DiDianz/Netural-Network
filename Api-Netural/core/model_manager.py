@@ -103,7 +103,7 @@ class ModelManager:
         except Exception as e:
             print(f"保存模型注册表失败: {e}")
 
-    def _register_saved_model(self, model_key, epochs, best_val_loss, remark=None):
+    def _register_saved_model(self, model_key, epochs, best_val_loss, remark=None, custom_name=None):
         """训练完成后注册一个保存的模型版本"""
         model_id = str(uuid.uuid4())[:8]
         filename = f"{model_key}_{model_id}.pth"
@@ -114,10 +114,16 @@ class ModelManager:
             import shutil
             shutil.copy2(best_path, filepath)
 
+        # 默认命名: 模型类型_日期_轮次_最优损失
+        if not custom_name:
+            date_str = datetime.now().strftime("%Y%m%d")
+            custom_name = f"{self.models[model_key]['display_name']}_{date_str}_{epochs}轮_val{best_val_loss:.4f}"
+
         entry = {
             "model_id": model_id,
             "model_key": model_key,
             "display_name": self.models[model_key]["display_name"],
+            "name": custom_name,
             "filename": filename,
             "epochs": epochs,
             "best_val_loss": round(best_val_loss, 6),
@@ -128,6 +134,16 @@ class ModelManager:
         self.saved_models[model_id] = entry
         self._save_registry()
         return entry
+
+    def rename_saved_model(self, model_id, new_name):
+        """重命名一个已保存的模型版本"""
+        if model_id not in self.saved_models:
+            raise ValueError(f"模型版本不存在: {model_id}")
+        if not new_name or not new_name.strip():
+            raise ValueError("名称不能为空")
+        self.saved_models[model_id]["name"] = new_name.strip()
+        self._save_registry()
+        return self.saved_models[model_id]
 
     def list_saved_models(self, model_key=None):
         """列出所有保存的模型版本，可按model_key过滤"""
@@ -308,7 +324,7 @@ class ModelManager:
 
     # ========== 训练（随机数据） ==========
 
-    async def train_model(self, model_key, epochs=50, lr=0.001, batch_size=32, db=None, base_model_id=None):
+    async def train_model(self, model_key, epochs=50, lr=0.001, batch_size=32, db=None, base_model_id=None, model_name=None):
         if self.training_state["is_training"]:
             raise RuntimeError("已有训练任务在进行中")
         if model_key not in self.models:
@@ -402,7 +418,7 @@ class ModelManager:
             remark = f"随机数据训练 {epochs}轮"
             if base_model_id:
                 remark += f" (基于 {base_model_id})"
-            saved = self._register_saved_model(model_key, epochs, best_val_loss, remark)
+            saved = self._register_saved_model(model_key, epochs, best_val_loss, remark, custom_name=model_name)
 
             self.training_state.update({"is_training": False, "progress": 100, "done": True,
                                         "message": f"训练完成！最优验证损失: {best_val_loss:.6f}",
@@ -1095,7 +1111,7 @@ class ModelManager:
 
 
 
-    async def train_model_with_data1(self, model_key, data, job_id, epochs=50, lr=0.001, batch_size=32, db=None, base_model_id=None):
+    async def train_model_with_data1(self, model_key, data, job_id, epochs=50, lr=0.001, batch_size=32, db=None, base_model_id=None, model_name=None):
         """
         用上传数据训练，数据格式: [特征11列, out_moist, brandID]
         按 brandID 分组，每组内构建滑动窗口
@@ -1314,7 +1330,7 @@ class ModelManager:
             remark = f"品牌数={len(brand_groups)}, 样本数={total}"
             if base_model_id:
                 remark += f" (基于 {base_model_id})"
-            saved = self._register_saved_model(model_key, epochs, best_val_loss, remark)
+            saved = self._register_saved_model(model_key, epochs, best_val_loss, remark, custom_name=model_name)
 
             job.update({"is_training": False, "progress": 100, "done": True,
                         "message": f"训练完成！最优验证损失: {best_val_loss:.6f}",
