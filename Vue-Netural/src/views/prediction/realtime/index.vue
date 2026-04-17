@@ -162,6 +162,34 @@
           {{ plcStreamState === 'open' ? '接收中' : '未连接' }}
         </el-tag>
       </div>
+
+      <!-- 数据源信息 -->
+      <div class="plc-source-info">
+        <div class="plc-info-item">
+          <span class="plc-info-label">设备</span>
+          <span class="plc-info-value">{{ selectedPlcDeviceName || '未选择' }}</span>
+        </div>
+        <div class="plc-info-item">
+          <span class="plc-info-label">设备IP</span>
+          <span class="plc-info-value mono">{{ selectedPlcDeviceInfo?.ip || '-' }}:{{ selectedPlcDeviceInfo?.port || '-' }}</span>
+        </div>
+        <div class="plc-info-item">
+          <span class="plc-info-label">模型</span>
+          <span class="plc-info-value">
+            <el-tag :type="modelTagType(currentModelKey)" size="small">{{ currentModelKey.toUpperCase() }}</el-tag>
+          </span>
+        </div>
+        <div class="plc-info-item">
+          <span class="plc-info-label">点位</span>
+          <span class="plc-info-value">
+            <el-tag type="info" size="small" v-for="pid in selectedPlcPoints" :key="pid">
+              {{ getPointLabel(pid) }}
+            </el-tag>
+            <span v-if="selectedPlcPoints.length === 0" style="color: var(--text-muted)">未选择</span>
+          </span>
+        </div>
+      </div>
+
       <div class="plc-values-grid">
         <div
           v-for="item in plcLiveValues"
@@ -173,8 +201,14 @@
             {{ item.success ? item.value : 'ERR' }}
           </div>
         </div>
-        <div v-if="plcLiveValues.length === 0" class="pv-empty">
+        <div v-if="!selectedPlcDevice" class="pv-empty">
           暂无数据 — 请先选择设备和点位
+        </div>
+        <div v-else-if="plcStreamState === 'open'" class="pv-empty">
+          已连接设备，等待数据接收中...
+        </div>
+        <div v-else class="pv-empty">
+          设备已配置 — 点击「开始」按钮启动数据接收
         </div>
       </div>
     </div>
@@ -251,6 +285,18 @@ const selectedPlcDeviceName = computed(() => {
   const d = plcDevices.value.find(d => d.id === selectedPlcDevice.value)
   return d ? d.name : ''
 })
+
+// 当前选中设备完整信息
+const selectedPlcDeviceInfo = computed(() => {
+  return plcDevices.value.find(d => d.id === selectedPlcDevice.value) || null
+})
+
+// 点位ID转名称标签
+function getPointLabel(pointId) {
+  const p = plcPoints.value.find(p => p.id === pointId)
+  if (!p) return `#${pointId}`
+  return `${p.point_name} (DB${p.db_number}.${p.start_address})`
+}
 
 const hasPlcConnected = computed(() =>
   plcDevices.value.some(d => d.status === 'connected')
@@ -467,14 +513,14 @@ function handleClear() {
   gap: 12px;
   padding: 16px 20px;
   background: var(--bg-card);
-  border: 1px solid #1e1e2e;
+  border: 1px solid var(--border-secondary);
   border-radius: 12px;
   flex-wrap: wrap;
 }
 
 .selector-label {
   font-size: 14px;
-  color: #888;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -495,16 +541,16 @@ function handleClear() {
   align-items: center;
   gap: 8px;
   font-size: 11px;
-  color: #999;
+  color: var(--text-secondary);
 }
 
 .model-option-loss {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: #f56c6c;
+  color: var(--danger);
 }
 
 .model-option-time {
-  color: #666;
+  color: var(--text-muted);
 }
 
 /* PLC 弹窗 */
@@ -520,7 +566,7 @@ function handleClear() {
 
 .plc-dialog-label {
   font-size: 14px;
-  color: #888;
+  color: var(--text-muted);
   white-space: nowrap;
   width: 70px;
   text-align: right;
@@ -528,7 +574,7 @@ function handleClear() {
 
 .plc-dialog-empty {
   text-align: center;
-  color: #999;
+  color: var(--text-muted);
   font-size: 13px;
   padding: 20px 0;
 }
@@ -546,7 +592,7 @@ function handleClear() {
 /* PLC 实时数据面板 */
 .plc-live-panel {
   background: var(--bg-card);
-  border: 1px solid #1e1e2e;
+  border: 1px solid var(--border-secondary);
   border-radius: 12px;
   padding: 16px 20px;
 }
@@ -558,7 +604,7 @@ function handleClear() {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 14px;
-  color: #ccc;
+  color: var(--text-primary);
 }
 
 .plc-values-grid {
@@ -568,8 +614,8 @@ function handleClear() {
 }
 
 .plc-value-card {
-  background: #111118;
-  border: 1px solid #1e1e2e;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
   border-radius: 8px;
   padding: 12px 14px;
   text-align: center;
@@ -577,7 +623,7 @@ function handleClear() {
 
 .pv-name {
   font-size: 12px;
-  color: #888;
+  color: var(--text-muted);
   margin-bottom: 6px;
 }
 
@@ -585,19 +631,56 @@ function handleClear() {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 20px;
   font-weight: 700;
-  color: #67c23a;
+  color: var(--success);
 }
 
 .pv-value.pv-error {
-  color: #f56c6c;
+  color: var(--danger);
   font-size: 14px;
 }
 
 .pv-empty {
   grid-column: 1 / -1;
   text-align: center;
-  color: #666;
+  color: var(--text-muted);
   padding: 20px;
+}
+
+/* PLC 数据源信息 */
+.plc-source-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 8px;
+}
+
+.plc-info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plc-info-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.plc-info-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.plc-info-value.mono {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 .side-panels {
