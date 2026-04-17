@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     MSSQL_DATABASE: str = "neural_predict"
     MSSQL_USERNAME: str = "sa"
     MSSQL_PASSWORD: str = "Aa123456"
-    MSSQL_DRIVER: str = "ODBC Driver 18 for SQL Server"
+    MSSQL_DRIVER: str = "ODBC Driver 17 for SQL Server"
 
     # JWT
     JWT_SECRET_KEY: str = "change-me"
