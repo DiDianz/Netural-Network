@@ -3,54 +3,49 @@
   <div class="prediction-page">
     <!-- 模型选择 -->
     <div class="model-selector">
-      <span class="selector-label">当前模型:</span>
+      <span class="selector-label">模型类型:</span>
+      <el-radio-group v-model="filterModelType" size="default" @change="handleTypeFilterChange">
+        <el-radio-button value="">全部</el-radio-button>
+        <el-radio-button value="lstm">LSTM</el-radio-button>
+        <el-radio-button value="gru">GRU</el-radio-button>
+        <el-radio-button value="transformer">Transformer</el-radio-button>
+      </el-radio-group>
 
-      <!-- 模型类型筛选 -->
+      <span class="selector-label" style="margin-left: 20px">选择模型:</span>
       <el-select
-        v-model="selectedModelType"
-        placeholder="全部类型"
-        size="default"
-        style="width: 160px"
-        clearable
-        @change="handleTypeFilter"
-      >
-        <el-option label="LSTM" value="lstm" />
-        <el-option label="GRU" value="gru" />
-        <el-option label="Transformer" value="transformer" />
-      </el-select>
-
-      <!-- 已保存模型选择 -->
-      <el-select
-        v-model="selectedModelId"
+        v-model="selectedSavedModelId"
         placeholder="请选择已保存的模型"
         size="default"
-        style="width: 380px"
+        style="width: 360px"
+        filterable
         :loading="loadingSavedModels"
         @change="handleSavedModelChange"
       >
         <el-option
           v-for="m in filteredSavedModels"
           :key="m.model_id"
-          :label="m.name"
+          :label="m.name || m.display_name"
           :value="m.model_id"
         >
-          <div class="saved-model-option">
-            <span class="smo-name">{{ m.name }}</span>
-            <div class="smo-meta">
-              <el-tag :type="modelKeyType(m.model_key)" size="small">{{ m.model_key.toUpperCase() }}</el-tag>
-              <span class="smo-loss">val: {{ m.best_val_loss }}</span>
-              <span class="smo-time">{{ m.trained_at }}</span>
+          <div class="model-option">
+            <span class="model-option-name">{{ m.name || m.display_name }}</span>
+            <div class="model-option-meta">
+              <el-tag :type="modelTagType(m.model_key)" size="small">{{ m.model_key.toUpperCase() }}</el-tag>
+              <span class="model-option-loss">Loss: {{ m.best_val_loss }}</span>
+              <span class="model-option-time">{{ formatTime(m.trained_at) }}</span>
             </div>
           </div>
         </el-option>
       </el-select>
 
-      <el-tag v-if="currentSavedModel" type="success" size="small">
-        {{ currentSavedModel.model_key.toUpperCase() }} · {{ currentSavedModel.best_val_loss }}
-      </el-tag>
-      <el-tag v-if="filteredSavedModels.length === 0 && !loadingSavedModels" type="info" size="small">
-        暂无已保存模型，请先训练
-      </el-tag>
+      <el-button
+        size="default"
+        :icon="Refresh"
+        circle
+        style="margin-left: 8px"
+        @click="loadSavedModels"
+        :loading="loadingSavedModels"
+      />
     </div>
 
     <!-- 数据源选择 -->
@@ -190,7 +185,7 @@ import RealtimePanel from '../../../components/RealtimePanel.vue'
 import ControlPanel from '../../../components/ControlPanel.vue'
 import { useSSE } from '../../../composables/useSSE'
 import { usePredictionStore } from '../../../composables/usePredictionStore'
-import { getModelList, switchModel, getUploadedFiles, getSavedModels, loadSavedModel } from '../../../api/model'
+import { getSavedModels, loadSavedModel, switchModel, getUploadedFiles } from '../../../api/model'
 import { getPlcDeviceList, getPlcPointList, readPlcBatch } from '../../../api/plc'
 
 const store = usePredictionStore()
@@ -198,14 +193,21 @@ const { chartData, latestPrediction } = store
 const { connectionState, startStream, stopStream } = useSSE()
 const interval = ref(1.0)
 
-const modelList = ref([])
+// 已保存模型相关状态
 const savedModels = ref([])
-const selectedModelId = ref(null)
-const selectedModelType = ref('')
-const selectedModel = ref('lstm')
+const filterModelType = ref('')
+const selectedSavedModelId = ref(null)
 const loadingSavedModels = ref(false)
+const currentModelKey = ref('lstm')
+
 const dataSource = ref('random')
 const hasUploadedFiles = ref(false)
+
+// 按类型筛选后的已保存模型列表
+const filteredSavedModels = computed(() => {
+  if (!filterModelType.value) return savedModels.value
+  return savedModels.value.filter(m => m.model_key === filterModelType.value)
+})
 
 // PLC 相关状态
 const plcDevices = ref([])
@@ -220,23 +222,8 @@ const hasPlcConnected = computed(() =>
   plcDevices.value.some(d => d.status === 'connected')
 )
 
-const filteredSavedModels = computed(() => {
-  if (!selectedModelType.value) return savedModels.value
-  return savedModels.value.filter(m => m.model_key === selectedModelType.value)
-})
-
-const currentSavedModel = computed(() =>
-  savedModels.value.find(m => m.model_id === selectedModelId.value) || null
-)
-
-function modelKeyType(key) {
-  const map = { lstm: 'success', gru: 'warning', transformer: 'primary' }
-  return map[key] || 'info'
-}
-
 onMounted(async () => {
-  await loadModels()
-  await loadSavedModelsList()
+  await loadSavedModels()
   checkUploadedFiles()
   await loadPlcDevices()
 })
@@ -246,34 +233,61 @@ onUnmounted(() => {
   stopPlcStream()
 })
 
-async function loadModels() {
-  try {
-    const res = await getModelList()
-    modelList.value = res.data || res
-    const current = modelList.value.find(m => m.is_current)
-    if (current) selectedModel.value = current.key
-  } catch (e) {
-    console.error('获取模型列表失败:', e)
-  }
-}
-
-async function loadSavedModelsList() {
+async function loadSavedModels() {
   loadingSavedModels.value = true
   try {
     const res = await getSavedModels()
     savedModels.value = res.data || []
-    // 默认选中第一个（最新的）
-    if (savedModels.value.length > 0 && !selectedModelId.value) {
-      const first = savedModels.value[0]
-      selectedModelId.value = first.model_id
-      selectedModel.value = first.model_key
-      selectedModelType.value = first.model_key
+    // 如果当前没有选中模型且有数据，默认选第一个
+    if (!selectedSavedModelId.value && savedModels.value.length > 0) {
+      const first = filteredSavedModels.value[0] || savedModels.value[0]
+      selectedSavedModelId.value = first.model_id
+      currentModelKey.value = first.model_key
     }
   } catch (e) {
     console.error('获取已保存模型列表失败:', e)
   } finally {
     loadingSavedModels.value = false
   }
+}
+
+function handleTypeFilterChange() {
+  // 切换类型筛选后，如果当前选中的模型不在筛选结果中，自动选第一个
+  const match = filteredSavedModels.value.find(m => m.model_id === selectedSavedModelId.value)
+  if (!match && filteredSavedModels.value.length > 0) {
+    selectedSavedModelId.value = filteredSavedModels.value[0].model_id
+    currentModelKey.value = filteredSavedModels.value[0].model_key
+  }
+}
+
+async function handleSavedModelChange(modelId) {
+  const model = savedModels.value.find(m => m.model_id === modelId)
+  if (!model) return
+  try {
+    // 先加载模型，再切换
+    await loadSavedModel(modelId)
+    await switchModel(model.model_key)
+    currentModelKey.value = model.model_key
+    ElMessage.success(`已加载模型: ${model.name || model.display_name} (${model.model_key.toUpperCase()})`)
+    // 如果正在运行预测流，重启
+    if (connectionState.value === 'open') {
+      stopStream()
+      setTimeout(() => {
+        startStream(interval.value, model.model_key, dataSource.value === 'uploaded')
+      }, 500)
+    }
+  } catch (e) {
+    ElMessage.error('加载模型失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message))
+  }
+}
+
+function modelTagType(key) {
+  return { lstm: '', gru: 'success', transformer: 'warning' }[key] || 'info'
+}
+
+function formatTime(t) {
+  if (!t) return ''
+  return t.replace('T', ' ').substring(0, 16)
 }
 
 async function checkUploadedFiles() {
@@ -353,43 +367,6 @@ function stopPlcStream() {
 }
 
 // ========== 事件处理 ==========
-async function handleSavedModelChange(modelId) {
-  const entry = savedModels.value.find(m => m.model_id === modelId)
-  if (!entry) return
-
-  try {
-    // 1. 切换到对应的模型类型
-    await switchModel(entry.model_key)
-    selectedModel.value = entry.model_key
-
-    // 2. 加载已保存的权重
-    await loadSavedModel(modelId)
-
-    ElMessage.success(`已加载: ${entry.name}`)
-    await loadSavedModelsList()
-
-    // 如果正在预测，重启流
-    if (connectionState.value === 'open') {
-      stopStream()
-      setTimeout(() => {
-        startStream(interval.value, entry.model_key, dataSource.value === 'uploaded')
-      }, 500)
-    }
-  } catch (e) {
-    ElMessage.error('加载模型失败: ' + (e.response?.data?.detail || e.message))
-  }
-}
-
-function handleTypeFilter() {
-  // 切换类型筛选时，如果当前选中的模型不在筛选结果中，清空选择
-  if (selectedModelType.value) {
-    const match = filteredSavedModels.value.find(m => m.model_id === selectedModelId.value)
-    if (!match) {
-      selectedModelId.value = null
-    }
-  }
-}
-
 function handleDataSourceChange() {
   stopStream()
   stopPlcStream()
@@ -403,10 +380,6 @@ function handleDataSourceChange() {
 }
 
 function handleStart() {
-  if (!selectedModel.value) {
-    ElMessage.warning('请先选择模型')
-    return
-  }
   if (dataSource.value === 'plc') {
     if (!selectedPlcDevice.value) {
       ElMessage.warning('请先选择 PLC 设备')
@@ -418,9 +391,9 @@ function handleStart() {
     }
     startPlcStream()
     // 同时启动预测流
-    startStream(interval.value, selectedModel.value, false)
+    startStream(interval.value, currentModelKey.value, false)
   } else {
-    startStream(interval.value, selectedModel.value, dataSource.value === 'uploaded')
+    startStream(interval.value, currentModelKey.value, dataSource.value === 'uploaded')
   }
 }
 
@@ -458,6 +431,35 @@ function handleClear() {
   font-size: 14px;
   color: #888;
   white-space: nowrap;
+}
+
+/* 已保存模型下拉选项 */
+.model-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-option-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.model-option-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #999;
+}
+
+.model-option-loss {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: #f56c6c;
+}
+
+.model-option-time {
+  color: #666;
 }
 
 .chart-section {
@@ -519,38 +521,6 @@ function handleClear() {
   text-align: center;
   color: #666;
   padding: 20px;
-}
-
-/* 已保存模型下拉选项 */
-.saved-model-option {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.smo-name {
-  font-size: 13px;
-  color: #e0e0e0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.smo-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #888;
-}
-
-.smo-loss {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: #67c23a;
-}
-
-.smo-time {
-  color: #666;
 }
 
 .side-panels {
