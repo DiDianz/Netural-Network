@@ -138,6 +138,27 @@ async def menu_list(
     return to_sidebar_format(menus)
 
 
+@router.get("/debug")
+async def menu_debug(db: Session = Depends(get_db)):
+    """调试：返回数据库中所有菜单的原始数据"""
+    menus = db.query(SysMenu).order_by(SysMenu.menu_id).all()
+    return [
+        {
+            "menu_id": m.menu_id,
+            "menu_name": m.menu_name,
+            "parent_id": m.parent_id,
+            "order_num": m.order_num,
+            "path": m.path,
+            "component": m.component,
+            "menu_type": m.menu_type,
+            "status": m.status,
+            "visible": m.visible,
+            "icon": m.icon,
+        }
+        for m in menus
+    ]
+
+
 @router.get("/tree")
 async def get_menu_tree(
     current_user: SysUser = Depends(get_current_user),
