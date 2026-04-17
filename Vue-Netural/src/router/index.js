@@ -89,12 +89,27 @@ const routes = [
         meta: { title: '模型管理', icon: 'code' }
       },
       {
+        path: 'saved-models',
+        name: 'PredictionSavedModels',
+        component: () => import('../views/prediction/saved-models/index.vue'),
+        meta: { title: '已保存模型', icon: 'folder' }
+      },
+      {
         path: 'training',
         name: 'PredictionTraining',
         component: () => import('../views/prediction/training/index.vue'),
         meta: { title: '模型训练', icon: 'cpu' }
-      },
-      // ========== PLC 设备管理 (新增) ==========
+      }
+    ]
+  },
+
+  // PLC 管理
+  {
+    path: '/plc',
+    component: Layout,
+    redirect: '/plc/device',
+    meta: { title: 'PLC管理', icon: 'international' },
+    children: [
       {
         path: 'device',
         name: 'PlcDevice',
