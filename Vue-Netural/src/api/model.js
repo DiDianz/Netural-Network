@@ -15,6 +15,14 @@ export function getTrainStatus() { return request.get('/model/train/status') }
 export function startTrainWithUpload(params) { return request.post('/model/train/upload', null, { params }) }
 export function stopUploadTrain(modelKey) { return request.post('/model/train/upload/stop', null, { params: { model_key: modelKey } }) }
 
+// ========== 模型版本管理 ==========
+export function getSavedModels(modelKey) {
+  const params = modelKey ? { model_key: modelKey } : {}
+  return request.get('/model/saved/list', { params })
+}
+export function deleteSavedModel(modelId) { return request.delete(`/model/saved/${modelId}`) }
+export function loadSavedModel(modelId) { return request.post(`/model/saved/${modelId}/load`) }
+
 // ========== 文件上传 ==========
 export function uploadFile(file) {
   const fd = new FormData()

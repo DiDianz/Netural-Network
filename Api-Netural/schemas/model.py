@@ -45,6 +45,7 @@ class TrainRequest(BaseModel):
     epochs: int = Field(default=50, ge=1, le=500, description="训练轮次")
     lr: float = Field(default=0.001, gt=0, le=1, description="学习率")
     batch_size: int = Field(default=32, ge=1, le=256, description="批大小")
+    base_model_id: Optional[str] = Field(default=None, description="基础模型版本ID，用于继续训练")
 
 
 # ========== 训练日志条目 ==========

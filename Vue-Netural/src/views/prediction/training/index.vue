@@ -10,6 +10,34 @@
       </el-radio-group>
     </div>
 
+    <!-- 模型来源切换 -->
+    <div class="source-selector">
+      <span class="selector-label">模型来源:</span>
+      <el-radio-group v-model="modelSource" size="default" @change="handleSourceChange">
+        <el-radio-button value="new">训练新模型</el-radio-button>
+        <el-radio-button value="existing">从已有模型继续训练</el-radio-button>
+      </el-radio-group>
+    </div>
+
+    <!-- 已有模型选择 -->
+    <div class="base-model-section" v-if="modelSource === 'existing'">
+      <div class="base-model-row">
+        <span class="config-label">选择基础模型:</span>
+        <el-select v-model="selectedBaseModelId" placeholder="选择一个已保存的模型版本" style="width: 500px"
+          :loading="loadingSavedModels" filterable>
+          <el-option v-for="m in filteredSavedModels" :key="m.model_id"
+            :label="`${m.display_name} | ${m.epochs}轮 | Val Loss: ${m.best_val_loss} | ${m.trained_at}`"
+            :value="m.model_id" />
+        </el-select>
+        <el-button size="small" @click="loadSavedModels" :loading="loadingSavedModels" style="margin-left: 8px">
+          刷新
+        </el-button>
+      </div>
+      <div class="base-model-hint" v-if="!filteredSavedModels.length && !loadingSavedModels">
+        暂无已保存的 {{ modelDisplayName }} 模型版本，请先训练一个模型或切换模型类型。
+      </div>
+    </div>
+
     <!-- 上传区域 -->
     <div class="upload-section" v-if="trainMode === 'uploaded'">
       <div class="upload-header">
@@ -188,7 +216,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 import {
   startTrain, stopTrain, getTrainStatus,
   uploadFile, getUploadedFiles, getUploadPreview, deleteUploadedFile,
-  startTrainWithUpload, stopUploadTrain, downloadTemplate
+  startTrainWithUpload, stopUploadTrain, downloadTemplate,
+  getSavedModels
 } from '../../../api/model'
 
 echarts.use([LineChart, CanvasRenderer, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent])
@@ -200,6 +229,12 @@ const epochs = ref(50)
 const learningRate = ref(0.001)
 const isTraining = ref(false)
 const trainMode = ref('random')
+
+// 模型来源
+const modelSource = ref('new')
+const selectedBaseModelId = ref(null)
+const savedModels = ref([])
+const loadingSavedModels = ref(false)
 
 const fileList = ref([])
 const uploadedFiles = ref([])
@@ -247,6 +282,15 @@ const brandTitle = computed(function () {
   return '品牌: ' + brandList.value.join('、')
 })
 
+const modelDisplayName = computed(function () {
+  var names = { lstm: 'LSTM + Attention', gru: 'GRU', transformer: 'Transformer' }
+  return names[selectedModel.value] || selectedModel.value
+})
+
+const filteredSavedModels = computed(function () {
+  return savedModels.value.filter(function (m) { return m.model_key === selectedModel.value })
+})
+
 // ===== 安全创建/获取 ECharts 实例 =====
 function safeGetChart(dom, existing) {
   if (!dom) return null
@@ -279,12 +323,17 @@ function safeGetChart(dom, existing) {
 
 onMounted(() => {
   if (route.query.model) selectedModel.value = route.query.model
+  if (route.query.base_model_id) {
+    modelSource.value = 'existing'
+    selectedBaseModelId.value = route.query.base_model_id
+  }
   setTimeout(function () {
     try { initVisibleCharts() } catch (e) { console.error('图表初始化失败:', e) }
   }, 300)
   window.addEventListener('resize', handleWindowResize)
   checkAndStartPolling()
   loadUploadedFiles()
+  loadSavedModels()
 })
 
 onUnmounted(() => { cleanup() })
@@ -700,6 +749,14 @@ watch(function () { return trainState.brand_predictions }, function () {
   brandUpdateTimer = setTimeout(function () { nextTick(updateBrandCharts) }, 250)
 }, { deep: true })
 
+// 模型类型变化时重新加载已保存模型列表
+watch(function () { return selectedModel.value }, function () {
+  if (modelSource.value === 'existing') {
+    loadSavedModels()
+    selectedBaseModelId.value = null
+  }
+})
+
 // ===== 轮询 =====
 async function checkAndStartPolling() {
   try {
@@ -811,15 +868,21 @@ async function handleStartTrain() {
 
   if (trainMode.value === 'uploaded') {
     if (!selectedFileIds.value.length) { ElMessage.warning('请选择训练数据'); return }
+    if (modelSource.value === 'existing' && !selectedBaseModelId.value) { ElMessage.warning('请选择一个基础模型'); return }
     await handleStartUploadTrain()
   } else {
+    if (modelSource.value === 'existing' && !selectedBaseModelId.value) { ElMessage.warning('请选择一个基础模型'); return }
     await handleStartRandomTrain()
   }
 }
 
 async function handleStartRandomTrain() {
   try {
-    await startTrain({ model_key: selectedModel.value, epochs: epochs.value, lr: learningRate.value, batch_size: 32 })
+    var params = { model_key: selectedModel.value, epochs: epochs.value, lr: learningRate.value, batch_size: 32 }
+    if (modelSource.value === 'existing' && selectedBaseModelId.value) {
+      params.base_model_id = selectedBaseModelId.value
+    }
+    await startTrain(params)
     ElMessage.success('训练已启动')
     isTraining.value = true
     trainState.total_epochs = epochs.value
@@ -830,11 +893,15 @@ async function handleStartRandomTrain() {
 
 async function handleStartUploadTrain() {
   try {
-    await startTrainWithUpload({
+    var params = {
       model_key: selectedModel.value,
       file_ids: selectedFileIds.value.join(','),
       epochs: epochs.value, lr: learningRate.value, batch_size: 32
-    })
+    }
+    if (modelSource.value === 'existing' && selectedBaseModelId.value) {
+      params.base_model_id = selectedBaseModelId.value
+    }
+    await startTrainWithUpload(params)
     ElMessage.success('训练已启动')
     isTraining.value = true
     trainState.total_epochs = epochs.value
@@ -932,6 +999,23 @@ function handleModeChange() {
 
 function clearLogs() { trainState.logs = [] }
 
+// ===== 模型版本管理 =====
+async function loadSavedModels() {
+  loadingSavedModels.value = true
+  try {
+    var res = await getSavedModels()
+    savedModels.value = res.data || []
+  } catch (e) { console.error('加载已保存模型失败:', e) }
+  finally { loadingSavedModels.value = false }
+}
+
+function handleSourceChange() {
+  if (modelSource.value === 'existing') {
+    selectedBaseModelId.value = null
+    loadSavedModels()
+  }
+}
+
 // ===== 上传 =====
 function handleFileChange(file, fl) { fileList.value = fl }
 function handleRemove(file, fl) { fileList.value = fl }
@@ -1006,6 +1090,34 @@ async function handleDownloadTemplate(fmt) {
   font-size: 14px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.base-model-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-secondary);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.base-model-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.base-model-hint {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.config-label {
+  font-size: 14px;
+  color: var(--text-muted);
+  flex-shrink: nowrap;
 }
 
 .upload-section {

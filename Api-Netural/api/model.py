@@ -47,11 +47,15 @@ async def start_training(body: TrainRequest, db: Session = Depends(get_db)):
         asyncio.create_task(
             model_manager.train_model(
                 model_key=body.model_key, epochs=body.epochs,
-                lr=body.lr, batch_size=body.batch_size, db=db
+                lr=body.lr, batch_size=body.batch_size, db=db,
+                base_model_id=body.base_model_id
             )
         )
-        return {"code": 200, "msg": f"已开始训练 {body.model_key} 模型"}
-    except RuntimeError as e:
+        msg = f"已开始训练 {body.model_key} 模型"
+        if body.base_model_id:
+            msg += f" (基于已有模型 {body.base_model_id})"
+        return {"code": 200, "msg": msg}
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -135,6 +139,7 @@ async def start_training_with_upload(
     epochs: int = Query(50, ge=1, le=500),
     lr: float = Query(0.001, gt=0, le=1),
     batch_size: int = Query(32, ge=1, le=256),
+    base_model_id: str = Query(None, description="基础模型版本ID，用于继续训练"),
     db: Session = Depends(get_db)
 ):
     if model_manager.training_state["is_training"]:
@@ -176,10 +181,14 @@ async def start_training_with_upload(
     asyncio.create_task(
         model_manager.train_model_with_data1(
             model_key=model_key, data=combined, job_id=job_id,
-            epochs=epochs, lr=lr, batch_size=batch_size, db=db
+            epochs=epochs, lr=lr, batch_size=batch_size, db=db,
+            base_model_id=base_model_id
         )
     )
-    return {"code": 200, "msg": f"已开始用上传数据训练 {model_key} 模型", "job_id": job_id}
+    msg = f"已开始用上传数据训练 {model_key} 模型"
+    if base_model_id:
+        msg += f" (基于已有模型 {base_model_id})"
+    return {"code": 200, "msg": msg, "job_id": job_id}
 
 
 @router.post("/train/upload/stop")
@@ -288,3 +297,34 @@ async def list_train_trends(
             for r in records
         ]
     }
+
+
+# ========== 模型版本管理 ==========
+
+@router.get("/saved/list")
+async def list_saved_models(model_key: str = Query(None)):
+    """列出所有保存的模型版本"""
+    return {"code": 200, "data": model_manager.list_saved_models(model_key)}
+
+
+@router.delete("/saved/{model_id}")
+async def delete_saved_model(model_id: str):
+    """删除一个保存的模型版本"""
+    try:
+        result = model_manager.delete_saved_model(model_id)
+        return {"code": 200, "data": result, "msg": "删除成功"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/saved/{model_id}/load")
+async def load_saved_model(model_id: str):
+    """加载一个已保存的模型版本到当前模型"""
+    try:
+        entry = model_manager.saved_models.get(model_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="模型版本不存在")
+        result = model_manager.load_model_weights(entry["model_key"], model_id)
+        return {"code": 200, "data": result, "msg": "加载成功"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

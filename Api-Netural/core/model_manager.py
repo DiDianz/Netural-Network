@@ -68,6 +68,9 @@ class ModelManager:
         self._interval = 1.0
         self.save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'saved_models')
         os.makedirs(self.save_dir, exist_ok=True)
+        self._registry_path = os.path.join(self.save_dir, 'registry.json')
+        self.saved_models = {}  # {model_id: {model_id, model_key, display_name, filename, epochs, best_val_loss, trained_at, remark}}
+        self._load_registry()
         self._load_saved_models()
 
     @property
@@ -81,6 +84,96 @@ class ModelManager:
     def _prefill_buffer(self, model_key):
         for _ in range(self.window_size):
             self.buffers[model_key].append(np.random.randn(self.input_dim).astype(np.float32))
+
+    # ========== 模型版本注册表 ==========
+
+    def _load_registry(self):
+        if os.path.exists(self._registry_path):
+            try:
+                with open(self._registry_path, 'r', encoding='utf-8') as f:
+                    self.saved_models = json.load(f)
+            except Exception as e:
+                print(f"加载模型注册表失败: {e}")
+                self.saved_models = {}
+
+    def _save_registry(self):
+        try:
+            with open(self._registry_path, 'w', encoding='utf-8') as f:
+                json.dump(self.saved_models, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存模型注册表失败: {e}")
+
+    def _register_saved_model(self, model_key, epochs, best_val_loss, remark=None):
+        """训练完成后注册一个保存的模型版本"""
+        model_id = str(uuid.uuid4())[:8]
+        filename = f"{model_key}_{model_id}.pth"
+        filepath = os.path.join(self.save_dir, filename)
+        # 同时保存到 _best.pth 和带ID的文件
+        best_path = os.path.join(self.save_dir, f"{model_key}_best.pth")
+        if os.path.exists(best_path):
+            import shutil
+            shutil.copy2(best_path, filepath)
+
+        entry = {
+            "model_id": model_id,
+            "model_key": model_key,
+            "display_name": self.models[model_key]["display_name"],
+            "filename": filename,
+            "epochs": epochs,
+            "best_val_loss": round(best_val_loss, 6),
+            "trained_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "remark": remark or "",
+            "file_size_kb": round(os.path.getsize(filepath) / 1024, 1) if os.path.exists(filepath) else 0
+        }
+        self.saved_models[model_id] = entry
+        self._save_registry()
+        return entry
+
+    def list_saved_models(self, model_key=None):
+        """列出所有保存的模型版本，可按model_key过滤"""
+        result = []
+        # 清理不存在的文件
+        to_remove = []
+        for mid, entry in self.saved_models.items():
+            filepath = os.path.join(self.save_dir, entry["filename"])
+            if not os.path.exists(filepath):
+                to_remove.append(mid)
+            else:
+                if model_key is None or entry["model_key"] == model_key:
+                    result.append(dict(entry))
+        for mid in to_remove:
+            del self.saved_models[mid]
+        if to_remove:
+            self._save_registry()
+        result.sort(key=lambda x: x.get("trained_at", ""), reverse=True)
+        return result
+
+    def delete_saved_model(self, model_id):
+        """删除一个保存的模型版本"""
+        if model_id not in self.saved_models:
+            raise ValueError(f"模型版本不存在: {model_id}")
+        entry = self.saved_models[model_id]
+        filepath = os.path.join(self.save_dir, entry["filename"])
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        del self.saved_models[model_id]
+        self._save_registry()
+        return {"deleted": model_id, "model_key": entry["model_key"]}
+
+    def load_model_weights(self, model_key, model_id):
+        """从已保存的版本加载权重到当前模型"""
+        if model_id not in self.saved_models:
+            raise ValueError(f"模型版本不存在: {model_id}")
+        entry = self.saved_models[model_id]
+        if entry["model_key"] != model_key:
+            raise ValueError(f"模型类型不匹配: 期望 {entry['model_key']}, 实际 {model_key}")
+        filepath = os.path.join(self.save_dir, entry["filename"])
+        if not os.path.exists(filepath):
+            raise ValueError(f"模型文件不存在: {filepath}")
+        model = self.models[model_key]["model"]
+        model.load_state_dict(torch.load(filepath, map_location=self.device))
+        model.to(self.device)
+        return entry
 
     def _load_saved_models(self):
         for key in self.models:
@@ -215,11 +308,15 @@ class ModelManager:
 
     # ========== 训练（随机数据） ==========
 
-    async def train_model(self, model_key, epochs=50, lr=0.001, batch_size=32, db=None):
+    async def train_model(self, model_key, epochs=50, lr=0.001, batch_size=32, db=None, base_model_id=None):
         if self.training_state["is_training"]:
             raise RuntimeError("已有训练任务在进行中")
         if model_key not in self.models:
             raise ValueError(f"模型不存在: {model_key}")
+
+        # 如果指定了基础模型，先加载权重
+        if base_model_id:
+            self.load_model_weights(model_key, base_model_id)
 
         train_id = str(uuid.uuid4())[:8]
         self.training_state = {
@@ -228,7 +325,7 @@ class ModelManager:
             "lr": lr, "elapsed": 0, "logs": [], "loss_history": [],
             "val_loss_history": [], "done": False, "message": "", "error": "",
             "predictions": [], "actuals": [], "train_id": train_id,
-            "brand_predictions": {}
+            "brand_predictions": {}, "base_model_id": base_model_id or ""
         }
 
         model = self.models[model_key]["model"]
@@ -300,8 +397,16 @@ class ModelManager:
             self.models[model_key]["status"] = "ready"
             self.models[model_key]["trained_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.models[model_key]["accuracy"] = round(1 - best_val_loss, 6) if best_val_loss < 1 else None
+
+            # 注册保存的模型版本
+            remark = f"随机数据训练 {epochs}轮"
+            if base_model_id:
+                remark += f" (基于 {base_model_id})"
+            saved = self._register_saved_model(model_key, epochs, best_val_loss, remark)
+
             self.training_state.update({"is_training": False, "progress": 100, "done": True,
-                                        "message": f"训练完成！最优验证损失: {best_val_loss:.6f}"})
+                                        "message": f"训练完成！最优验证损失: {best_val_loss:.6f}",
+                                        "saved_model_id": saved["model_id"]})
             if db:
                 self._save_train_log(model_key, epochs, best_val_loss, elapsed, "completed", db) # type: ignore
 
@@ -990,7 +1095,7 @@ class ModelManager:
 
 
 
-    async def train_model_with_data1(self, model_key, data, job_id, epochs=50, lr=0.001, batch_size=32, db=None):
+    async def train_model_with_data1(self, model_key, data, job_id, epochs=50, lr=0.001, batch_size=32, db=None, base_model_id=None):
         """
         用上传数据训练，数据格式: [特征11列, out_moist, brandID]
         按 brandID 分组，每组内构建滑动窗口
@@ -999,6 +1104,10 @@ class ModelManager:
 
         if model_key not in self.models:
             raise ValueError(f"模型不存在: {model_key}")
+
+        # 如果指定了基础模型，先加载权重
+        if base_model_id:
+            self.load_model_weights(model_key, base_model_id)
 
         self.training_state["is_training"] = True
         train_id = str(uuid.uuid4())[:8]
@@ -1201,10 +1310,18 @@ class ModelManager:
             self.models[model_key]["trained_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.models[model_key]["accuracy"] = round(1 - best_val_loss, 6) if best_val_loss < 1 else None
 
+            # 注册保存的模型版本
+            remark = f"品牌数={len(brand_groups)}, 样本数={total}"
+            if base_model_id:
+                remark += f" (基于 {base_model_id})"
+            saved = self._register_saved_model(model_key, epochs, best_val_loss, remark)
+
             job.update({"is_training": False, "progress": 100, "done": True,
-                        "message": f"训练完成！最优验证损失: {best_val_loss:.6f}"})
+                        "message": f"训练完成！最优验证损失: {best_val_loss:.6f}",
+                        "saved_model_id": saved["model_id"]})
             self.training_state.update({"is_training": False, "progress": 100, "done": True,
-                                        "message": f"训练完成！最优验证损失: {best_val_loss:.6f}"})
+                                        "message": f"训练完成！最优验证损失: {best_val_loss:.6f}",
+                                        "saved_model_id": saved["model_id"]})
 
             if db:
                 self._save_train_log(model_key, epochs, best_val_loss, elapsed, "completed", db, # type: ignore
