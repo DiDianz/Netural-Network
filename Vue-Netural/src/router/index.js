@@ -59,6 +59,12 @@ const routes = [
         name: 'SystemMenu',
         component: () => import('../views/system/menu/index.vue'),
         meta: { title: '菜单管理', icon: 'tree-table' }
+      },
+      {
+        path: 'config',
+        name: 'SystemConfig',
+        component: () => import('../views/system/config/index.vue'),
+        meta: { title: '系统设置', icon: 'setting' }
       }
     ]
   },

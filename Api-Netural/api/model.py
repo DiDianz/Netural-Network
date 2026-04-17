@@ -309,10 +309,14 @@ async def list_saved_models(model_key: str = Query(None)):
 
 
 @router.delete("/saved/{model_id}")
-async def delete_saved_model(model_id: str):
+async def delete_saved_model(model_id: str, db: Session = Depends(get_db)):
     """删除一个保存的模型版本"""
+    # 读取系统配置：是否同时删除本地文件
+    from models.sys_config import SysConfig
+    config = db.query(SysConfig).filter(SysConfig.config_key == "model_delete_local_file").first()
+    delete_local = config and config.config_value.lower() in ("true", "1", "yes")
     try:
-        result = model_manager.delete_saved_model(model_id)
+        result = model_manager.delete_saved_model(model_id, delete_local=delete_local)
         return {"code": 200, "data": result, "msg": "删除成功"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

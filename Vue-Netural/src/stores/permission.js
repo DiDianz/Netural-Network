@@ -55,6 +55,11 @@ function getDefaultMenus() {
           name: 'SystemMenu',
           path: 'menu',
           meta: { title: '菜单管理', icon: 'tree-table' }
+        },
+        {
+          name: 'SystemConfig',
+          path: 'config',
+          meta: { title: '系统设置', icon: 'setting' }
         }
       ]
     },

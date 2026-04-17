@@ -164,17 +164,18 @@ class ModelManager:
         result.sort(key=lambda x: x.get("trained_at", ""), reverse=True)
         return result
 
-    def delete_saved_model(self, model_id):
+    def delete_saved_model(self, model_id, delete_local=False):
         """删除一个保存的模型版本"""
         if model_id not in self.saved_models:
             raise ValueError(f"模型版本不存在: {model_id}")
         entry = self.saved_models[model_id]
         filepath = os.path.join(self.save_dir, entry["filename"])
-        if os.path.exists(filepath):
+        if os.path.exists(filepath) and delete_local:
             os.remove(filepath)
+        # 始终从注册表中移除
         del self.saved_models[model_id]
         self._save_registry()
-        return {"deleted": model_id, "model_key": entry["model_key"]}
+        return {"deleted": model_id, "model_key": entry["model_key"], "local_file_deleted": delete_local and os.path.exists(filepath) is False}
 
     def load_model_weights(self, model_key, model_id):
         """从已保存的版本加载权重到当前模型"""

@@ -45,6 +45,7 @@ def init_db():
         _init_menus(db)
         _init_admin_user(db)
         _init_role_menu(db)
+        _init_configs(db)
         db.commit()
         print("数据库初始化完成")
     except Exception as e:
@@ -87,6 +88,9 @@ def _init_menus(db):
         SysMenu(menu_id=12, menu_name="菜单管理", parent_id=1, order_num=3,
                 path="menu", component="system/menu/index", menu_type="C",
                 visible="0", status="0", icon="tree-table"),
+        SysMenu(menu_id=13, menu_name="系统设置", parent_id=1, order_num=4,
+                path="config", component="system/config/index", menu_type="C",
+                visible="0", status="0", icon="setting"),
 
         # 神经网络预测子菜单
         SysMenu(menu_id=20, menu_name="实时预测", parent_id=2, order_num=1,
@@ -119,42 +123,63 @@ def _init_menus(db):
 def _migrate_menus(db):
     """增量迁移菜单：为已有数据库添加新增的菜单项"""
     from models.menu import SysMenu
+    from models.sys_config import SysConfig
     try:
-        existing_ids = {m.menu_id for m in db.query(SysMenu.menu_id).all()}
+        existing_names = {m.menu_name: m for m in db.query(SysMenu).all()}
         new_menus = []
 
-        # PLC管理 - 独立父级菜单
-        if 3 not in existing_ids:
-            new_menus.append(SysMenu(menu_id=3, menu_name="PLC管理", parent_id=0, order_num=3,
+        # PLC管理 - 独立父级菜单（如果不存在）
+        if "PLC管理" not in existing_names:
+            plc_parent = SysMenu(menu_name="PLC管理", parent_id=0, order_num=3,
                 path="plc", component="", menu_type="M", visible="0",
-                status="0", icon="international"))
+                status="0", icon="international")
+            new_menus.append(plc_parent)
+            db.flush()  # 获取自增 ID
 
-        # 已保存模型菜单
-        if 24 not in existing_ids:
-            new_menus.append(SysMenu(menu_id=24, menu_name="已保存模型", parent_id=2, order_num=5,
-                path="saved-models", component="prediction/saved-models/index", menu_type="C",
-                visible="0", status="0", icon="folder"))
+            # 把 PLC 相关子菜单移到新的父级下
+            for m in db.query(SysMenu).all():
+                if m.menu_name in ("PLC设备管理", "PLC点位管理", "设备列表", "点位管理"):
+                    if m.parent_id != 0:  # 确认是子菜单
+                        m.parent_id = plc_parent.menu_id
+        else:
+            # PLC管理已存在，确保子菜单正确关联
+            plc_parent = existing_names["PLC管理"]
+            for m in db.query(SysMenu).all():
+                if m.menu_name in ("PLC设备管理", "PLC点位管理", "设备列表", "点位管理"):
+                    if m.parent_id != plc_parent.menu_id and m.parent_id != 0:
+                        m.parent_id = plc_parent.menu_id
 
-        # PLC 菜单从 prediction 下迁移到独立父级
-        for mid in [30, 31, 32]:
-            menu = db.query(SysMenu).filter(SysMenu.menu_id == mid).first()
-            if menu:
-                if mid == 30:
-                    # 删除旧的 PLC 目录（子菜单会由前端重新关联）
-                    db.delete(menu)
-                elif mid in [31, 32]:
-                    # 将 PLC 子菜单移到新父级 menu_id=3
-                    menu.parent_id = 3
+        # 已保存模型菜单（如果不存在）
+        if "已保存模型" not in existing_names:
+            prediction_parent = existing_names.get("神经网络预测")
+            if prediction_parent:
+                new_menus.append(SysMenu(menu_name="已保存模型", parent_id=prediction_parent.menu_id, order_num=5,
+                    path="saved-models", component="prediction/saved-models/index", menu_type="C",
+                    visible="0", status="0", icon="folder"))
+
+        # 系统设置菜单（如果不存在）
+        if "系统设置" not in existing_names:
+            system_parent = existing_names.get("系统管理")
+            if system_parent:
+                new_menus.append(SysMenu(menu_name="系统设置", parent_id=system_parent.menu_id, order_num=4,
+                    path="config", component="system/config/index", menu_type="C",
+                    visible="0", status="0", icon="setting"))
 
         if new_menus:
             db.add_all(new_menus)
 
-        if new_menus or True:  # always commit the parent_id updates
-            db.commit()
-            if new_menus:
-                print(f"菜单迁移完成，新增 {len(new_menus)} 个菜单")
-            else:
-                print("菜单迁移检查完成")
+        # 初始化系统配置（如果不存在）
+        existing_configs = {c.config_key for c in db.query(SysConfig.config_key).all()} if db.query(SysConfig).count() > 0 else set()
+        if "model_delete_local_file" not in existing_configs:
+            db.add(SysConfig(config_name="删除模型时同时删除本地文件",
+                config_key="model_delete_local_file", config_value="false",
+                config_type="Y", remark="启用后，删除已保存模型版本时将同时删除本地 .pth 文件"))
+
+        db.commit()
+        if new_menus:
+            print(f"菜单迁移完成，新增 {len(new_menus)} 个菜单")
+        else:
+            print("菜单迁移检查完成")
     except Exception as e:
         db.rollback()
         print(f"菜单迁移失败: {e}")
@@ -189,3 +214,14 @@ def _init_role_menu(db):
     admin_role = db.query(SysRole).filter_by(role_id=1).first()
     all_menus = db.query(SysMenu).all()
     admin_role.menus = all_menus
+
+
+def _init_configs(db):
+    """初始化系统配置"""
+    from models.sys_config import SysConfig
+    configs = [
+        SysConfig(config_id=1, config_name="删除模型时同时删除本地文件",
+                  config_key="model_delete_local_file", config_value="false",
+                  config_type="Y", remark="启用后，删除已保存模型版本时将同时删除本地 .pth 文件"),
+    ]
+    db.add_all(configs)

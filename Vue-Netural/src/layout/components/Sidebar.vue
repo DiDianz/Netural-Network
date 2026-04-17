@@ -92,6 +92,7 @@ const iconMap = {
   menu: IconMenu,
   folder: Folder,
   international: Connection,
+  setting: Setting,
   设备: Setting,
   操作日志: Document,
 }
