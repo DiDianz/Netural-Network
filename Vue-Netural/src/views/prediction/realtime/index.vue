@@ -1,4 +1,4 @@
-<!-- src/views/prediction/realtime/index.vue — 新增 PLC 数据源 -->
+<!-- src/views/prediction/realtime/index.vue -->
 <template>
   <div class="prediction-page">
     <!-- 模型选择 -->
@@ -53,73 +53,95 @@
       <span class="selector-label">数据源:</span>
       <el-radio-group v-model="dataSource" size="default" @change="handleDataSourceChange">
         <el-radio-button value="random">随机模拟数据</el-radio-button>
-        <el-radio-button value="uploaded" :disabled="!hasUploadedFiles">上传数据</el-radio-button>
-        <el-radio-button value="plc" :disabled="!hasPlcConnected">PLC 实时数据</el-radio-button>
+        <el-radio-button value="plc">PLC 实时数据</el-radio-button>
       </el-radio-group>
 
-      <el-tag v-if="dataSource === 'uploaded'" type="warning" size="small" style="margin-left: 12px">
-        预测值 vs 实际值对比
+      <el-tag v-if="dataSource === 'plc' && selectedPlcDevice" type="success" size="small" style="margin-left: 12px">
+        {{ selectedPlcDeviceName }} — {{ selectedPlcPoints.length }} 个点位
       </el-tag>
-      <el-tag v-if="!hasUploadedFiles && dataSource !== 'plc'" type="info" size="small" style="margin-left: 12px">
-        请先在模型管理页上传数据
-      </el-tag>
+    </div>
 
-      <!-- PLC 数据源配置 -->
-      <template v-if="dataSource === 'plc'">
-        <el-select
-          v-model="selectedPlcDevice"
-          placeholder="选择 PLC 设备"
-          size="default"
-          style="margin-left: 12px; width: 200px"
-          @change="handlePlcDeviceChange"
-        >
-          <el-option
-            v-for="d in plcDevices"
-            :key="d.id"
-            :label="d.name"
-            :value="d.id"
-            :disabled="d.status !== 'connected'"
+    <!-- PLC 设备选择弹窗 -->
+    <el-dialog
+      v-model="plcDialogVisible"
+      title="选择 PLC 设备与点位"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <div class="plc-dialog-content">
+        <div class="plc-dialog-row">
+          <span class="plc-dialog-label">PLC 设备:</span>
+          <el-select
+            v-model="dialogPlcDevice"
+            placeholder="请选择 PLC 设备"
+            style="flex: 1"
+            @change="handleDialogDeviceChange"
+            :loading="loadingPlcDevices"
           >
-            <span>{{ d.name }}</span>
-            <el-tag
-              :type="d.status === 'connected' ? 'success' : 'info'"
-              size="small"
-              style="margin-left: 8px"
+            <el-option
+              v-for="d in plcDevices"
+              :key="d.id"
+              :label="d.name"
+              :value="d.id"
             >
-              {{ d.status === 'connected' ? '已连接' : '未连接' }}
-            </el-tag>
-          </el-option>
-        </el-select>
-
-        <el-select
-          v-model="selectedPlcPoints"
-          multiple
-          placeholder="选择 DB 点位"
-          size="default"
-          style="margin-left: 8px; width: 320px"
-          collapse-tags
-          collapse-tags-tooltip
-          :disabled="!selectedPlcDevice"
-        >
-          <el-option
-            v-for="p in plcPoints"
-            :key="p.id"
-            :label="`${p.point_name} (DB${p.db_number}.${p.start_address})`"
-            :value="p.id"
+              <div class="plc-device-option">
+                <span>{{ d.name }}</span>
+                <el-tag
+                  :type="d.status === 'connected' ? 'success' : 'info'"
+                  size="small"
+                >
+                  {{ d.status === 'connected' ? '已连接' : '未连接' }}
+                </el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <el-button
+            :icon="Refresh"
+            circle
+            size="default"
+            @click="loadPlcDevices"
+            :loading="loadingPlcDevices"
+            style="margin-left: 8px"
           />
-        </el-select>
+        </div>
 
+        <div class="plc-dialog-row" style="margin-top: 16px">
+          <span class="plc-dialog-label">DB 点位:</span>
+          <el-select
+            v-model="dialogPlcPoints"
+            multiple
+            placeholder="请先选择设备"
+            style="flex: 1"
+            collapse-tags
+            collapse-tags-tooltip
+            :disabled="!dialogPlcDevice"
+            :loading="loadingPlcPoints"
+          >
+            <el-option
+              v-for="p in plcPoints"
+              :key="p.id"
+              :label="`${p.point_name} (DB${p.db_number}.${p.start_address})`"
+              :value="p.id"
+            />
+          </el-select>
+        </div>
+
+        <div v-if="dialogPlcDevice && plcPoints.length === 0 && !loadingPlcPoints" class="plc-dialog-empty">
+          该设备下暂无可用点位
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="handlePlcDialogCancel">取消</el-button>
         <el-button
           type="primary"
-          size="default"
-          style="margin-left: 8px"
-          @click="handleRefreshPlcPoints"
-          :disabled="!selectedPlcDevice"
-          :icon="Refresh"
-          circle
-        />
+          @click="handlePlcDialogConfirm"
+          :disabled="!dialogPlcDevice || dialogPlcPoints.length === 0"
+        >
+          确认选择
+        </el-button>
       </template>
-    </div>
+    </el-dialog>
 
     <!-- 图表区域 -->
     <div class="chart-section">
@@ -185,7 +207,7 @@ import RealtimePanel from '../../../components/RealtimePanel.vue'
 import ControlPanel from '../../../components/ControlPanel.vue'
 import { useSSE } from '../../../composables/useSSE'
 import { usePredictionStore } from '../../../composables/usePredictionStore'
-import { getSavedModels, loadSavedModel, switchModel, getUploadedFiles } from '../../../api/model'
+import { getSavedModels, loadSavedModel, switchModel } from '../../../api/model'
 import { getPlcDeviceList, getPlcPointList, readPlcBatch } from '../../../api/plc'
 
 const store = usePredictionStore()
@@ -201,7 +223,6 @@ const loadingSavedModels = ref(false)
 const currentModelKey = ref('lstm')
 
 const dataSource = ref('random')
-const hasUploadedFiles = ref(false)
 
 // 按类型筛选后的已保存模型列表
 const filteredSavedModels = computed(() => {
@@ -218,13 +239,25 @@ const plcLiveValues = ref([])
 const plcStreamState = ref('closed')
 let plcStreamEventSource = null
 
+// PLC 弹窗状态
+const plcDialogVisible = ref(false)
+const dialogPlcDevice = ref(null)
+const dialogPlcPoints = ref([])
+const loadingPlcDevices = ref(false)
+const loadingPlcPoints = ref(false)
+
+// 当前选中设备名称（用于数据源标签显示）
+const selectedPlcDeviceName = computed(() => {
+  const d = plcDevices.value.find(d => d.id === selectedPlcDevice.value)
+  return d ? d.name : ''
+})
+
 const hasPlcConnected = computed(() =>
   plcDevices.value.some(d => d.status === 'connected')
 )
 
 onMounted(async () => {
   await loadSavedModels()
-  checkUploadedFiles()
   await loadPlcDevices()
 })
 
@@ -273,7 +306,7 @@ async function handleSavedModelChange(modelId) {
     if (connectionState.value === 'open') {
       stopStream()
       setTimeout(() => {
-        startStream(interval.value, model.model_key, dataSource.value === 'uploaded')
+        startStream(interval.value, model.model_key)
       }, 500)
     }
   } catch (e) {
@@ -290,41 +323,46 @@ function formatTime(t) {
   return t.replace('T', ' ').substring(0, 16)
 }
 
-async function checkUploadedFiles() {
-  try {
-    const res = await getUploadedFiles()
-    hasUploadedFiles.value = (res.data || []).length > 0
-  } catch (e) { /* ignore */ }
-}
-
 // ========== PLC 相关 ==========
 async function loadPlcDevices() {
+  loadingPlcDevices.value = true
   try {
     const res = await getPlcDeviceList()
     plcDevices.value = res.data || []
   } catch (e) { /* ignore */ }
+  finally { loadingPlcDevices.value = false }
 }
 
-async function handlePlcDeviceChange(deviceId) {
-  selectedPlcPoints.value = []
-  plcLiveValues.value = []
-  if (!deviceId) {
-    plcPoints.value = []
-    return
-  }
+async function handleDialogDeviceChange(deviceId) {
+  dialogPlcPoints.value = []
+  plcPoints.value = []
+  if (!deviceId) return
+  loadingPlcPoints.value = true
   try {
     const res = await getPlcPointList({ device_id: deviceId, is_active: 1 })
     plcPoints.value = res.data || []
   } catch (e) {
     console.error('加载点位失败:', e)
-  }
+  } finally { loadingPlcPoints.value = false }
 }
 
-async function handleRefreshPlcPoints() {
-  if (selectedPlcDevice.value) {
-    await handlePlcDeviceChange(selectedPlcDevice.value)
-    ElMessage.success('已刷新点位列表')
+// 弹窗确认
+function handlePlcDialogConfirm() {
+  selectedPlcDevice.value = dialogPlcDevice.value
+  selectedPlcPoints.value = [...dialogPlcPoints.value]
+  plcDialogVisible.value = false
+  ElMessage.success('PLC 设备已配置，点击开始按钮启动预测')
+}
+
+// 弹窗取消 — 如果之前没选过设备，回退到随机模拟
+function handlePlcDialogCancel() {
+  plcDialogVisible.value = false
+  if (!selectedPlcDevice.value) {
+    dataSource.value = 'random'
   }
+  // 恢复弹窗状态为已确认的值
+  dialogPlcDevice.value = selectedPlcDevice.value
+  dialogPlcPoints.value = [...selectedPlcPoints.value]
 }
 
 function startPlcStream() {
@@ -372,14 +410,23 @@ function handleDataSourceChange() {
   stopPlcStream()
 
   if (dataSource.value === 'plc') {
-    // PLC 模式：自动加载设备列表
+    // 打开 PLC 设备选择弹窗
     loadPlcDevices()
-  } else {
-    setTimeout(() => handleStart(), 300)
+    dialogPlcDevice.value = selectedPlcDevice.value
+    dialogPlcPoints.value = [...selectedPlcPoints.value]
+    // 如果弹窗中选了设备，加载点位
+    if (dialogPlcDevice.value) {
+      handleDialogDeviceChange(dialogPlcDevice.value)
+    }
+    plcDialogVisible.value = true
   }
 }
 
 function handleStart() {
+  if (!selectedSavedModelId.value) {
+    ElMessage.warning('请先选择一个已保存的模型')
+    return
+  }
   if (dataSource.value === 'plc') {
     if (!selectedPlcDevice.value) {
       ElMessage.warning('请先选择 PLC 设备')
@@ -390,11 +437,9 @@ function handleStart() {
       return
     }
     startPlcStream()
-    // 同时启动预测流
-    startStream(interval.value, currentModelKey.value, false)
-  } else {
-    startStream(interval.value, currentModelKey.value, dataSource.value === 'uploaded')
   }
+  // 使用当前选中的模型类型进行推理
+  startStream(interval.value, currentModelKey.value)
 }
 
 function handleStop() {
@@ -460,6 +505,38 @@ function handleClear() {
 
 .model-option-time {
   color: #666;
+}
+
+/* PLC 弹窗 */
+.plc-dialog-content {
+  padding: 8px 0;
+}
+
+.plc-dialog-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plc-dialog-label {
+  font-size: 14px;
+  color: #888;
+  white-space: nowrap;
+  width: 70px;
+  text-align: right;
+}
+
+.plc-dialog-empty {
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+.plc-device-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .chart-section {
