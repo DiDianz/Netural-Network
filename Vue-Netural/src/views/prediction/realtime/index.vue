@@ -4,12 +4,53 @@
     <!-- 模型选择 -->
     <div class="model-selector">
       <span class="selector-label">当前模型:</span>
-      <el-radio-group v-model="selectedModel" size="default" @change="handleModelChange">
-        <el-radio-button v-for="m in modelList" :key="m.key" :value="m.key">
-          {{ m.display_name }}
-          <el-tag v-if="m.is_current" type="success" size="small" style="margin-left: 4px">当前</el-tag>
-        </el-radio-button>
-      </el-radio-group>
+
+      <!-- 模型类型筛选 -->
+      <el-select
+        v-model="selectedModelType"
+        placeholder="全部类型"
+        size="default"
+        style="width: 160px"
+        clearable
+        @change="handleTypeFilter"
+      >
+        <el-option label="LSTM" value="lstm" />
+        <el-option label="GRU" value="gru" />
+        <el-option label="Transformer" value="transformer" />
+      </el-select>
+
+      <!-- 已保存模型选择 -->
+      <el-select
+        v-model="selectedModelId"
+        placeholder="请选择已保存的模型"
+        size="default"
+        style="width: 380px"
+        :loading="loadingSavedModels"
+        @change="handleSavedModelChange"
+      >
+        <el-option
+          v-for="m in filteredSavedModels"
+          :key="m.model_id"
+          :label="m.name"
+          :value="m.model_id"
+        >
+          <div class="saved-model-option">
+            <span class="smo-name">{{ m.name }}</span>
+            <div class="smo-meta">
+              <el-tag :type="modelKeyType(m.model_key)" size="small">{{ m.model_key.toUpperCase() }}</el-tag>
+              <span class="smo-loss">val: {{ m.best_val_loss }}</span>
+              <span class="smo-time">{{ m.trained_at }}</span>
+            </div>
+          </div>
+        </el-option>
+      </el-select>
+
+      <el-tag v-if="currentSavedModel" type="success" size="small">
+        {{ currentSavedModel.model_key.toUpperCase() }} · {{ currentSavedModel.best_val_loss }}
+      </el-tag>
+      <el-tag v-if="filteredSavedModels.length === 0 && !loadingSavedModels" type="info" size="small">
+        暂无已保存模型，请先训练
+      </el-tag>
     </div>
 
     <!-- 数据源选择 -->
@@ -149,7 +190,7 @@ import RealtimePanel from '../../../components/RealtimePanel.vue'
 import ControlPanel from '../../../components/ControlPanel.vue'
 import { useSSE } from '../../../composables/useSSE'
 import { usePredictionStore } from '../../../composables/usePredictionStore'
-import { getModelList, switchModel, getUploadedFiles } from '../../../api/model'
+import { getModelList, switchModel, getUploadedFiles, getSavedModels, loadSavedModel } from '../../../api/model'
 import { getPlcDeviceList, getPlcPointList, readPlcBatch } from '../../../api/plc'
 
 const store = usePredictionStore()
@@ -158,7 +199,11 @@ const { connectionState, startStream, stopStream } = useSSE()
 const interval = ref(1.0)
 
 const modelList = ref([])
+const savedModels = ref([])
+const selectedModelId = ref(null)
+const selectedModelType = ref('')
 const selectedModel = ref('lstm')
+const loadingSavedModels = ref(false)
 const dataSource = ref('random')
 const hasUploadedFiles = ref(false)
 
@@ -175,8 +220,23 @@ const hasPlcConnected = computed(() =>
   plcDevices.value.some(d => d.status === 'connected')
 )
 
+const filteredSavedModels = computed(() => {
+  if (!selectedModelType.value) return savedModels.value
+  return savedModels.value.filter(m => m.model_key === selectedModelType.value)
+})
+
+const currentSavedModel = computed(() =>
+  savedModels.value.find(m => m.model_id === selectedModelId.value) || null
+)
+
+function modelKeyType(key) {
+  const map = { lstm: 'success', gru: 'warning', transformer: 'primary' }
+  return map[key] || 'info'
+}
+
 onMounted(async () => {
   await loadModels()
+  await loadSavedModelsList()
   checkUploadedFiles()
   await loadPlcDevices()
 })
@@ -194,6 +254,25 @@ async function loadModels() {
     if (current) selectedModel.value = current.key
   } catch (e) {
     console.error('获取模型列表失败:', e)
+  }
+}
+
+async function loadSavedModelsList() {
+  loadingSavedModels.value = true
+  try {
+    const res = await getSavedModels()
+    savedModels.value = res.data || []
+    // 默认选中第一个（最新的）
+    if (savedModels.value.length > 0 && !selectedModelId.value) {
+      const first = savedModels.value[0]
+      selectedModelId.value = first.model_id
+      selectedModel.value = first.model_key
+      selectedModelType.value = first.model_key
+    }
+  } catch (e) {
+    console.error('获取已保存模型列表失败:', e)
+  } finally {
+    loadingSavedModels.value = false
   }
 }
 
@@ -274,19 +353,40 @@ function stopPlcStream() {
 }
 
 // ========== 事件处理 ==========
-async function handleModelChange(key) {
+async function handleSavedModelChange(modelId) {
+  const entry = savedModels.value.find(m => m.model_id === modelId)
+  if (!entry) return
+
   try {
-    await switchModel(key)
-    ElMessage.success('已切换到 ' + key.toUpperCase() + ' 模型')
-    await loadModels()
+    // 1. 切换到对应的模型类型
+    await switchModel(entry.model_key)
+    selectedModel.value = entry.model_key
+
+    // 2. 加载已保存的权重
+    await loadSavedModel(modelId)
+
+    ElMessage.success(`已加载: ${entry.name}`)
+    await loadSavedModelsList()
+
+    // 如果正在预测，重启流
     if (connectionState.value === 'open') {
       stopStream()
       setTimeout(() => {
-        startStream(interval.value, key, dataSource.value === 'uploaded')
+        startStream(interval.value, entry.model_key, dataSource.value === 'uploaded')
       }, 500)
     }
   } catch (e) {
-    ElMessage.error('切换失败')
+    ElMessage.error('加载模型失败: ' + (e.response?.data?.detail || e.message))
+  }
+}
+
+function handleTypeFilter() {
+  // 切换类型筛选时，如果当前选中的模型不在筛选结果中，清空选择
+  if (selectedModelType.value) {
+    const match = filteredSavedModels.value.find(m => m.model_id === selectedModelId.value)
+    if (!match) {
+      selectedModelId.value = null
+    }
   }
 }
 
@@ -303,6 +403,10 @@ function handleDataSourceChange() {
 }
 
 function handleStart() {
+  if (!selectedModel.value) {
+    ElMessage.warning('请先选择模型')
+    return
+  }
   if (dataSource.value === 'plc') {
     if (!selectedPlcDevice.value) {
       ElMessage.warning('请先选择 PLC 设备')
@@ -415,6 +519,38 @@ function handleClear() {
   text-align: center;
   color: #666;
   padding: 20px;
+}
+
+/* 已保存模型下拉选项 */
+.saved-model-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smo-name {
+  font-size: 13px;
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #888;
+}
+
+.smo-loss {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: #67c23a;
+}
+
+.smo-time {
+  color: #666;
 }
 
 .side-panels {
