@@ -23,7 +23,7 @@
         background-color="transparent"
         text-color="#8a8a9a"
         active-text-color="#4a9eff"
-        :unique-opened="true"
+        :unique-opened="false"
         router
       >
         <!-- 首页（固定） -->
