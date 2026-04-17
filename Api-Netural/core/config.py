@@ -22,12 +22,16 @@ class Settings(BaseSettings):
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:
-        # 使用 pymssql 驱动（推荐，无需安装 ODBC）
-        return (
-            f"mssql+pymssql://{self.MSSQL_USERNAME}:{self.MSSQL_PASSWORD}"
-            f"@{self.MSSQL_SERVER}:{self.MSSQL_PORT}/{self.MSSQL_DATABASE}"
-            f"?charset=utf8"
+        import urllib.parse
+        params = urllib.parse.quote_plus(
+            f"DRIVER={{{self.MSSQL_DRIVER}}};"
+            f"SERVER={self.MSSQL_SERVER},{self.MSSQL_PORT};"
+            f"DATABASE={self.MSSQL_DATABASE};"
+            f"UID={self.MSSQL_USERNAME};"
+            f"PWD={self.MSSQL_PASSWORD};"
+            f"TrustServerCertificate=yes;"
         )
+        return f"mssql+pyodbc:///?odbc_connect={params}"
 
     # 如果用 pyodbc 驱动，替换为:
     # @property
