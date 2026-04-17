@@ -283,7 +283,7 @@ async function handleDelete(device) {
 }
 
 function handleManagePoints(device) {
-  router.push({ path: '/prediction/point', query: { device_id: device.id, device_name: device.name } })
+  router.push({ path: '/plc/point', query: { device_id: device.id, device_name: device.name } })
 }
 </script>
 
