@@ -10,5 +10,17 @@
     "trained_at": "2026-04-17 14:36:33",
     "remark": "随机数据训练 50轮",
     "file_size_kb": 1095.3
+  },
+  "cc52f83d": {
+    "model_id": "cc52f83d",
+    "model_key": "gru",
+    "display_name": "GRU",
+    "name": "GRU_20260420_50轮_val0.0128",
+    "filename": "gru_cc52f83d.pth",
+    "epochs": 50,
+    "best_val_loss": 0.012811,
+    "trained_at": "2026-04-20 14:34:47",
+    "remark": "品牌数=2, 样本数=66",
+    "file_size_kb": 636.7
   }
 }

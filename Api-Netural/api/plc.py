@@ -30,9 +30,9 @@ async def list_devices(db: Session = Depends(get_db)):
     data = []
     for d in devices:
         # 实时检查连接状态
-        actual_status = "connected" if plc_manager.is_connected(d.id) else "disconnected"
-        if d.status != actual_status and actual_status == "disconnected":
-            d.status = "disconnected"
+        actual_status = "connected" if plc_manager.is_connected(d.id) else "disconnected" # type: ignore
+        if d.status != actual_status and actual_status == "disconnected": # type: ignore
+            d.status = "disconnected" # type: ignore
             db.commit()
         point_count = db.query(func.count(PlcDbPoint.id)).filter(
             PlcDbPoint.device_id == d.id
@@ -41,8 +41,8 @@ async def list_devices(db: Session = Depends(get_db)):
             "id": d.id, "name": d.name, "ip": d.ip, "port": d.port,
             "rack": d.rack, "slot": d.slot, "status": d.status,
             "remark": d.remark, "point_count": point_count,
-            "create_time": d.create_time.strftime("%Y-%m-%d %H:%M:%S") if d.create_time else None,
-            "update_time": d.update_time.strftime("%Y-%m-%d %H:%M:%S") if d.update_time else None,
+            "create_time": d.create_time.strftime("%Y-%m-%d %H:%M:%S") if d.create_time else None, # type: ignore
+            "update_time": d.update_time.strftime("%Y-%m-%d %H:%M:%S") if d.update_time else None, # type: ignore
         })
     return {"code": 200, "data": data}
 
@@ -94,17 +94,17 @@ async def update_device(
     if not device:
         raise HTTPException(400, "设备不存在")
     if name is not None:
-        device.name = name
+        device.name = name # type: ignore
     if ip is not None:
-        device.ip = ip
+        device.ip = ip # type: ignore
     if port is not None:
-        device.port = port
+        device.port = port # type: ignore
     if rack is not None:
-        device.rack = rack
+        device.rack = rack # type: ignore
     if slot is not None:
-        device.slot = slot
+        device.slot = slot # type: ignore
     if remark is not None:
-        device.remark = remark
+        device.remark = remark # type: ignore
     db.commit()
     return {"code": 200, "msg": "更新成功"}
 
@@ -135,13 +135,13 @@ async def connect_device(device_id: int = Query(...), db: Session = Depends(get_
     if not device:
         raise HTTPException(400, "设备不存在")
 
-    result = plc_manager.connect(device_id, device.ip, device.port, device.rack, device.slot)
+    result = plc_manager.connect(device_id, device.ip, device.port, device.rack, device.slot) # type: ignore
     if result["success"]:
-        device.status = "connected"
+        device.status = "connected" # type: ignore
         db.commit()
         return {"code": 200, "msg": "连接成功"}
     else:
-        device.status = "error"
+        device.status = "error" # type: ignore
         db.commit()
         raise HTTPException(400, result["msg"])
 
@@ -152,7 +152,7 @@ async def disconnect_device(device_id: int = Query(...), db: Session = Depends(g
     plc_manager.disconnect(device_id)
     device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
     if device:
-        device.status = "disconnected"
+        device.status = "disconnected" # type: ignore
         db.commit()
     return {"code": 200, "msg": "已断开连接"}
 
@@ -163,8 +163,8 @@ async def connect_all_devices(db: Session = Depends(get_db)):
     devices = db.query(PlcDevice).all()
     results = []
     for d in devices:
-        r = plc_manager.connect(d.id, d.ip, d.port, d.rack, d.slot)
-        d.status = "connected" if r["success"] else "error"
+        r = plc_manager.connect(d.id, d.ip, d.port, d.rack, d.slot) # type: ignore
+        d.status = "connected" if r["success"] else "error" # type: ignore
         results.append({"id": d.id, "name": d.name, "success": r["success"], "msg": r["msg"]})
     db.commit()
     return {"code": 200, "data": results}
@@ -214,8 +214,8 @@ async def list_points(
             "db_number": p.db_number, "start_address": p.start_address,
             "data_type": p.data_type, "bit_index": p.bit_index,
             "description": p.description, "is_active": p.is_active,
-            "create_time": p.create_time.strftime("%Y-%m-%d %H:%M:%S") if p.create_time else None,
-            "update_time": p.update_time.strftime("%Y-%m-%d %H:%M:%S") if p.update_time else None,
+            "create_time": p.create_time.strftime("%Y-%m-%d %H:%M:%S") if p.create_time else None, # type: ignore
+            "update_time": p.update_time.strftime("%Y-%m-%d %H:%M:%S") if p.update_time else None, # type: ignore
         } for p in points]
     }
 
@@ -271,22 +271,22 @@ async def update_point(
     if not point:
         raise HTTPException(400, "点位不存在")
     if point_name is not None:
-        point.point_name = point_name
+        point.point_name = point_name # type: ignore
     if db_number is not None:
-        point.db_number = db_number
+        point.db_number = db_number # type: ignore
     if start_address is not None:
-        point.start_address = start_address
+        point.start_address = start_address # type: ignore
     if data_type is not None:
         valid_types = ["REAL", "INT", "DINT", "BOOL", "WORD"]
         if data_type.upper() not in valid_types:
             raise HTTPException(400, f"不支持的数据类型，仅支持: {', '.join(valid_types)}")
-        point.data_type = data_type.upper()
+        point.data_type = data_type.upper() # type: ignore
     if bit_index is not None:
-        point.bit_index = bit_index
+        point.bit_index = bit_index # type: ignore
     if description is not None:
-        point.description = description
+        point.description = description # type: ignore
     if is_active is not None:
-        point.is_active = is_active
+        point.is_active = is_active # type: ignore
     db.commit()
     return {"code": 200, "msg": "更新成功"}
 
