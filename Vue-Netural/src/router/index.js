@@ -125,7 +125,7 @@ const routes = [
       {
         path: 'point',
         name: 'PlcPoint',
-        component: () => import('../views/prediction/plc/point/index.vue'),
+        component: () => import('../views/plc/point/index.vue'),
         meta: { title: 'PLC点位管理', icon: 'list' }
       }
     ]
