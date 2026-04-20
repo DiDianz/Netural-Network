@@ -119,7 +119,7 @@ const routes = [
       {
         path: 'device',
         name: 'PlcDevice',
-        component: () => import('../views/prediction/plc/device/index.vue'),
+        component: () => import('../views/plc/device/index.vue'),
         meta: { title: 'PLC设备管理', icon: 'cpu' }
       },
       {
