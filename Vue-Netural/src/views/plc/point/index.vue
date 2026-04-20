@@ -165,7 +165,7 @@ import { Plus, ArrowLeft, Search, Cpu } from '@element-plus/icons-vue'
 import {
   getPlcPointList, addPlcPoint, updatePlcPoint, deletePlcPoint,
   readPlcSingle, readPlcBatch, getPlcDeviceList
-} from '../../../../api/plc'
+} from '../../../api/plc'
 
 const route = useRoute()
 

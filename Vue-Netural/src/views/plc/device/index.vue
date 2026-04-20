@@ -152,7 +152,7 @@ import { Plus, Refresh, Cpu } from '@element-plus/icons-vue'
 import {
   getPlcDeviceList, addPlcDevice, updatePlcDevice, deletePlcDevice,
   connectPlc, disconnectPlc, connectAllPlc, disconnectAllPlc
-} from '../../../../api/plc'
+} from '../../../api/plc'
 
 const router = useRouter()
 const devices = ref([])
