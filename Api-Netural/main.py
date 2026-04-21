@@ -15,6 +15,7 @@ from api.websocket import router as ws_router
 from api.upload import router as upload_router
 from api.plc import router as plc_router  # PLC 管理
 from api.config import router as config_router  # 系统设置
+from api.instance import router as instance_router  # 预测实例管理
 
 # 导入模型以确保表被注册
 from models.predict_history import PredictHistory
@@ -23,6 +24,7 @@ from models.train_trend import TrainTrend
 from models.plc_device import PlcDevice      # PLC 设备表
 from models.plc_db_point import PlcDbPoint   # PLC 点位表
 from models.sys_config import SysConfig       # 系统配置表
+from models.prediction_instance import PredictionInstance  # 预测实例表
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,6 +64,7 @@ app.include_router(ws_router)
 app.include_router(upload_router)
 app.include_router(plc_router)  # PLC 管理路由
 app.include_router(config_router)  # 系统设置路由
+app.include_router(instance_router)  # 预测实例管理路由
 
 @app.get("/health")
 async def health_check():

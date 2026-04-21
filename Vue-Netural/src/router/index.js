@@ -83,6 +83,18 @@ const routes = [
         meta: { title: '实时预测', icon: 'monitor' }
       },
       {
+        path: 'realtime/:id',
+        name: 'PredictionInstance',
+        component: () => import('../views/prediction/realtime/index.vue'),
+        meta: { title: '实例预测', icon: 'monitor', hidden: true }
+      },
+      {
+        path: 'instances',
+        name: 'PredictionInstances',
+        component: () => import('../views/prediction/instances/index.vue'),
+        meta: { title: '预测实例管理', icon: 'list' }
+      },
+      {
         path: 'history',
         name: 'PredictionHistory',
         component: () => import('../views/prediction/history/index.vue'),
