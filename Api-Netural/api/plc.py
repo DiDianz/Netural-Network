@@ -1,6 +1,6 @@
 # api/plc.py
 """
-PLC 设备管理 API — 设备 CRUD + DB 点位管理 + 连接/读取
+PLC 设备管理 API — 设备 CRUD + DB 点位管理 + 连接/读取 + 模拟PLC
 """
 import json
 import asyncio
@@ -13,6 +13,7 @@ from core.plc_simulator import plc_simulator
 
 from core.database import get_db
 from core.plc_service import plc_manager
+from core.plc_simulator import plc_simulator
 from models.plc_device import PlcDevice
 from models.plc_db_point import PlcDbPoint
 
@@ -30,11 +31,18 @@ async def list_devices(db: Session = Depends(get_db)):
     devices = db.query(PlcDevice).order_by(PlcDevice.create_time.desc()).all()
     data = []
     for d in devices:
-        # 实时检查连接状态
-        actual_status = "connected" if plc_manager.is_connected(d.id) else "disconnected" # type: ignore
-        if d.status != actual_status and actual_status == "disconnected": # type: ignore
-            d.status = "disconnected" # type: ignore
+        # 实时检查连接状态 — 模拟状态优先
+        if plc_simulator.is_simulating(d.id):  # type: ignore
+            actual_status = "simulated"
+        elif plc_manager.is_connected(d.id):  # type: ignore
+            actual_status = "connected"
+        else:
+            actual_status = "disconnected"
+
+        if d.status != actual_status:  # type: ignore
+            d.status = actual_status  # type: ignore
             db.commit()
+
         point_count = db.query(func.count(PlcDbPoint.id)).filter(
             PlcDbPoint.device_id == d.id
         ).scalar() or 0
@@ -42,8 +50,8 @@ async def list_devices(db: Session = Depends(get_db)):
             "id": d.id, "name": d.name, "ip": d.ip, "port": d.port,
             "rack": d.rack, "slot": d.slot, "status": d.status,
             "remark": d.remark, "point_count": point_count,
-            "create_time": d.create_time.strftime("%Y-%m-%d %H:%M:%S") if d.create_time else None, # type: ignore
-            "update_time": d.update_time.strftime("%Y-%m-%d %H:%M:%S") if d.update_time else None, # type: ignore
+            "create_time": d.create_time.strftime("%Y-%m-%d %H:%M:%S") if d.create_time else None,  # type: ignore
+            "update_time": d.update_time.strftime("%Y-%m-%d %H:%M:%S") if d.update_time else None,  # type: ignore
         })
     return {"code": 200, "data": data}
 
@@ -65,14 +73,13 @@ async def get_device(device_id: int = Query(...), db: Session = Depends(get_db))
 async def add_device(
     name: str = Query(..., min_length=1, max_length=100),
     ip: str = Query(..., min_length=7, max_length=50),
-    port: int = Query(102, ge=1, le=65535),
     rack: int = Query(0, ge=0),
     slot: int = Query(1, ge=0),
     remark: str = Query(""),
     db: Session = Depends(get_db)
 ):
-    """新增 PLC 设备"""
-    device = PlcDevice(name=name, ip=ip, port=port, rack=rack, slot=slot, remark=remark)
+    """新增 PLC 设备（西门子1200/1500不需要端口，使用默认102）"""
+    device = PlcDevice(name=name, ip=ip, port=102, rack=rack, slot=slot, remark=remark)
     db.add(device)
     db.commit()
     db.refresh(device)
@@ -84,7 +91,6 @@ async def update_device(
     id: int = Query(...),
     name: str = Query(None),
     ip: str = Query(None),
-    port: int = Query(None, ge=1, le=65535),
     rack: int = Query(None, ge=0),
     slot: int = Query(None, ge=0),
     remark: str = Query(None),
@@ -95,17 +101,15 @@ async def update_device(
     if not device:
         raise HTTPException(400, "设备不存在")
     if name is not None:
-        device.name = name # type: ignore
+        device.name = name  # type: ignore
     if ip is not None:
-        device.ip = ip # type: ignore
-    if port is not None:
-        device.port = port # type: ignore
+        device.ip = ip  # type: ignore
     if rack is not None:
-        device.rack = rack # type: ignore
+        device.rack = rack  # type: ignore
     if slot is not None:
-        device.slot = slot # type: ignore
+        device.slot = slot  # type: ignore
     if remark is not None:
-        device.remark = remark # type: ignore
+        device.remark = remark  # type: ignore
     db.commit()
     return {"code": 200, "msg": "更新成功"}
 
@@ -116,7 +120,8 @@ async def delete_device(device_id: int = Query(...), db: Session = Depends(get_d
     device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
     if not device:
         raise HTTPException(400, "设备不存在")
-    # 先断开连接
+    # 先断开连接和模拟
+    plc_simulator.stop_simulate(device_id)
     plc_manager.disconnect(device_id)
     # 删除关联的 DB 点位
     db.query(PlcDbPoint).filter(PlcDbPoint.device_id == device_id).delete()
@@ -136,13 +141,16 @@ async def connect_device(device_id: int = Query(...), db: Session = Depends(get_
     if not device:
         raise HTTPException(400, "设备不存在")
 
-    result = plc_manager.connect(device_id, device.ip, device.port, device.rack, device.slot) # type: ignore
+    # 先停止模拟（如有）
+    plc_simulator.stop_simulate(device_id)
+
+    result = plc_manager.connect(device_id, device.ip, device.port, device.rack, device.slot)  # type: ignore
     if result["success"]:
-        device.status = "connected" # type: ignore
+        device.status = "connected"  # type: ignore
         db.commit()
         return {"code": 200, "msg": "连接成功"}
     else:
-        device.status = "error" # type: ignore
+        device.status = "error"  # type: ignore
         db.commit()
         raise HTTPException(400, result["msg"])
 
@@ -153,7 +161,7 @@ async def disconnect_device(device_id: int = Query(...), db: Session = Depends(g
     plc_manager.disconnect(device_id)
     device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
     if device:
-        device.status = "disconnected" # type: ignore
+        device.status = "disconnected"  # type: ignore
         db.commit()
     return {"code": 200, "msg": "已断开连接"}
 
@@ -164,8 +172,12 @@ async def connect_all_devices(db: Session = Depends(get_db)):
     devices = db.query(PlcDevice).all()
     results = []
     for d in devices:
-        r = plc_manager.connect(d.id, d.ip, d.port, d.rack, d.slot) # type: ignore
-        d.status = "connected" if r["success"] else "error" # type: ignore
+        # 跳过正在模拟的设备
+        if plc_simulator.is_simulating(d.id):  # type: ignore
+            results.append({"id": d.id, "name": d.name, "success": False, "msg": "设备正在模拟中"})
+            continue
+        r = plc_manager.connect(d.id, d.ip, d.port, d.rack, d.slot)  # type: ignore
+        d.status = "connected" if r["success"] else "error"  # type: ignore
         results.append({"id": d.id, "name": d.name, "success": r["success"], "msg": r["msg"]})
     db.commit()
     return {"code": 200, "data": results}
@@ -174,10 +186,76 @@ async def connect_all_devices(db: Session = Depends(get_db)):
 @router.post("/device/disconnect-all")
 async def disconnect_all_devices(db: Session = Depends(get_db)):
     """断开所有 PLC 设备"""
+    plc_simulator.stop_all()
     plc_manager.disconnect_all()
     db.query(PlcDevice).update({"status": "disconnected"})
     db.commit()
     return {"code": 200, "msg": "已断开全部连接"}
+
+
+# ============================================================
+#  PLC 模拟器
+# ============================================================
+
+@router.post("/device/simulate")
+async def simulate_device(
+    device_id: int = Query(...),
+    interval: float = Query(1.0, ge=0.1, le=10.0),
+    min_val: float = Query(0),
+    max_val: float = Query(100),
+    pattern: str = Query("random", regex="^(random|sine|step|sawtooth)$"),
+    db: Session = Depends(get_db)
+):
+    """
+    模拟PLC启动 — 生成模拟数据供预测系统使用
+    pattern: random(随机波动) | sine(正弦波) | step(阶梯变化) | sawtooth(锯齿波)
+    """
+    device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
+    if not device:
+        raise HTTPException(400, "设备不存在")
+
+    # 先断开真实连接（如有）
+    plc_manager.disconnect(device_id)
+
+    # 获取该设备的启用点位
+    points = db.query(PlcDbPoint).filter(
+        PlcDbPoint.device_id == device_id,
+        PlcDbPoint.is_active == 1
+    ).all()
+
+    if not points:
+        raise HTTPException(400, "该设备没有启用的DB点位，请先添加点位")
+
+    point_list = [{"id": p.id, "point_name": p.point_name} for p in points]
+
+    config = {
+        "interval": interval,
+        "min_val": min_val,
+        "max_val": max_val,
+        "pattern": pattern
+    }
+
+    result = plc_simulator.start_simulate(device_id, point_list, config)
+    if result["success"]:
+        device.status = "simulated"  # type: ignore
+        db.commit()
+        return {"code": 200, "msg": "模拟启动成功", "data": {"point_count": len(points)}}
+    else:
+        raise HTTPException(400, result["msg"])
+
+
+@router.post("/device/simulate/stop")
+async def stop_simulate_device(
+    device_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    """停止模拟PLC"""
+    plc_simulator.stop_simulate(device_id)
+    device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
+    if device:
+        device.status = "disconnected"  # type: ignore
+        db.commit()
+    return {"code": 200, "msg": "已停止模拟"}
 
 
 # ============================================================
@@ -215,8 +293,8 @@ async def list_points(
             "db_number": p.db_number, "start_address": p.start_address,
             "data_type": p.data_type, "bit_index": p.bit_index,
             "description": p.description, "is_active": p.is_active,
-            "create_time": p.create_time.strftime("%Y-%m-%d %H:%M:%S") if p.create_time else None, # type: ignore
-            "update_time": p.update_time.strftime("%Y-%m-%d %H:%M:%S") if p.update_time else None, # type: ignore
+            "create_time": p.create_time.strftime("%Y-%m-%d %H:%M:%S") if p.create_time else None,  # type: ignore
+            "update_time": p.update_time.strftime("%Y-%m-%d %H:%M:%S") if p.update_time else None,  # type: ignore
         } for p in points]
     }
 
@@ -234,7 +312,6 @@ async def add_point(
     db: Session = Depends(get_db)
 ):
     """新增 DB 点位"""
-    # 检查设备是否存在
     device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
     if not device:
         raise HTTPException(400, "设备不存在")
@@ -272,22 +349,22 @@ async def update_point(
     if not point:
         raise HTTPException(400, "点位不存在")
     if point_name is not None:
-        point.point_name = point_name # type: ignore
+        point.point_name = point_name  # type: ignore
     if db_number is not None:
-        point.db_number = db_number # type: ignore
+        point.db_number = db_number  # type: ignore
     if start_address is not None:
-        point.start_address = start_address # type: ignore
+        point.start_address = start_address  # type: ignore
     if data_type is not None:
         valid_types = ["REAL", "INT", "DINT", "BOOL", "WORD"]
         if data_type.upper() not in valid_types:
             raise HTTPException(400, f"不支持的数据类型，仅支持: {', '.join(valid_types)}")
-        point.data_type = data_type.upper() # type: ignore
+        point.data_type = data_type.upper()  # type: ignore
     if bit_index is not None:
-        point.bit_index = bit_index # type: ignore
+        point.bit_index = bit_index  # type: ignore
     if description is not None:
-        point.description = description # type: ignore
+        point.description = description  # type: ignore
     if is_active is not None:
-        point.is_active = is_active # type: ignore
+        point.is_active = is_active  # type: ignore
     db.commit()
     return {"code": 200, "msg": "更新成功"}
 
@@ -316,6 +393,12 @@ async def read_single_point(
     bit_index: int = Query(0, ge=0, le=7)
 ):
     """读取单个 DB 点位的值"""
+    # 优先检查模拟状态
+    if plc_simulator.is_simulating(device_id):
+        # 模拟模式下从点位查询
+        # 此处简化处理，实际需要根据 db_number+start_address 映射到 point_id
+        pass
+
     result = plc_manager.read_value(device_id, db_number, start_address, data_type, bit_index)
     if result["success"]:
         return {"code": 200, "data": {"value": result["value"]}}
@@ -347,7 +430,12 @@ async def read_batch_points(
         "data_type": p.data_type, "bit_index": p.bit_index
     } for p in points]
 
-    result = plc_manager.read_multiple(device_id, point_list)
+    # 优先使用模拟数据
+    if plc_simulator.is_simulating(device_id):
+        result = plc_simulator.read_multiple(device_id, point_list)
+    else:
+        result = plc_manager.read_multiple(device_id, point_list)
+
     if result["success"]:
         return {"code": 200, "data": result["data"]}
     raise HTTPException(400, result["msg"])
@@ -360,7 +448,7 @@ async def read_stream(
     point_ids: str = Query(None, description="逗号分隔的点位ID"),
     db: Session = Depends(get_db)
 ):
-    """SSE 持续读取 PLC 数据流"""
+    """SSE 持续读取 PLC 数据流（支持模拟模式）"""
     query = db.query(PlcDbPoint).filter(
         PlcDbPoint.device_id == device_id,
         PlcDbPoint.is_active == 1
@@ -379,18 +467,25 @@ async def read_stream(
         "data_type": p.data_type, "bit_index": p.bit_index
     } for p in points]
 
+    is_simulating = plc_simulator.is_simulating(device_id)
+
     async def event_generator():
         try:
             while True:
-                if not plc_manager.is_connected(device_id):
+                if is_simulating:
+                    result = plc_simulator.read_multiple(device_id, point_list)
+                elif not plc_manager.is_connected(device_id):
                     yield f"data: {json.dumps({'error': '设备未连接'}, ensure_ascii=False)}\n\n"
                     break
-                result = plc_manager.read_multiple(device_id, point_list)
+                else:
+                    result = plc_manager.read_multiple(device_id, point_list)
+
                 if result["success"]:
                     payload = {
                         "timestamp": asyncio.get_event_loop().time(),
                         "device_id": device_id,
-                        "points": result["data"]
+                        "points": result["data"],
+                        "simulated": is_simulating
                     }
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 else:
