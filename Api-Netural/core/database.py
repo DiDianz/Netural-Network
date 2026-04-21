@@ -30,6 +30,22 @@ def get_db():
         db.close()
 
 
+def _migrate_prediction_instance(db):
+    """为 prediction_instance 表添加缺失的列"""
+    try:
+        # 检查 base_model_id 列是否存在
+        db.execute(text("SELECT TOP 1 base_model_id FROM prediction_instance"))
+        print("prediction_instance 表已是最新")
+    except Exception:
+        try:
+            db.execute(text("ALTER TABLE prediction_instance ADD base_model_id NVARCHAR(50) DEFAULT ''"))
+            db.commit()
+            print("prediction_instance 表已添加 base_model_id 列")
+        except Exception as e:
+            db.rollback()
+            print(f"prediction_instance 迁移失败: {e}")
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -39,6 +55,7 @@ def init_db():
         if result and result > 0:
             print("数据库已初始化，跳过")
             _migrate_menus(db)
+            _migrate_prediction_instance(db)
             return
 
         _init_roles(db)
