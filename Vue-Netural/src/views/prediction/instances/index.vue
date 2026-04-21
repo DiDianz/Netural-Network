@@ -164,19 +164,20 @@
         </el-form-item>
 
         <el-form-item label="预测模型" required>
-          <el-radio-group v-model="formData.model_source" size="default" @change="handleModelSourceChange">
-            <el-radio-button value="saved">选择已保存模型</el-radio-button>
-            <el-radio-button value="new">新建模型</el-radio-button>
+          <el-radio-group v-model="formData.model_key" size="default">
+            <el-radio-button value="lstm">LSTM</el-radio-button>
+            <el-radio-button value="gru">GRU</el-radio-button>
+            <el-radio-button value="transformer">Transformer</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
-        <!-- 已保存模型选择 -->
-        <el-form-item v-if="formData.model_source === 'saved'" label="模型版本" required>
+        <el-form-item label="已保存模型">
           <el-select
             v-model="formData.base_model_id"
-            placeholder="请选择已保存的模型"
+            placeholder="选择已保存的模型版本（可选，不选则使用默认权重）"
             style="width: 100%"
             filterable
+            clearable
             :loading="loadingSavedModels"
           >
             <el-option
@@ -190,20 +191,11 @@
                 <div class="smo-meta">
                   <el-tag :type="modelTagType(m.model_key)" size="small">{{ m.model_key.toUpperCase() }}</el-tag>
                   <span class="smo-loss">Loss: {{ m.best_val_loss }}</span>
-                  <span class="smo-time">{{ m.trained_at }}</span>
                 </div>
               </div>
             </el-option>
           </el-select>
-        </el-form-item>
-
-        <!-- 新建模型选择 -->
-        <el-form-item v-if="formData.model_source === 'new'" label="模型类型" required>
-          <el-radio-group v-model="formData.model_key">
-            <el-radio-button value="lstm">LSTM</el-radio-button>
-            <el-radio-button value="gru">GRU</el-radio-button>
-            <el-radio-button value="transformer">Transformer</el-radio-button>
-          </el-radio-group>
+          <el-button size="default" :icon="Refresh" circle style="margin-left: 8px" @click="loadSavedModels" :loading="loadingSavedModels" />
         </el-form-item>
 
         <el-form-item label="预测间隔">
@@ -226,7 +218,7 @@
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Edit, Delete, Monitor } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Monitor, Refresh } from '@element-plus/icons-vue'
 import { getInstanceList, addInstance, updateInstance, deleteInstance } from '../../../api/instance'
 import { getPlcDeviceList, getPlcPointList } from '../../../api/plc'
 import { getSavedModels } from '../../../api/model'
@@ -242,9 +234,9 @@ const loadingPoints = ref(false)
 const savedModels = ref([])
 const loadingSavedModels = ref(false)
 
-// 已保存模型按类型筛选
+// 已保存模型按当前选中的模型类型筛选
 const filteredSavedModels = computed(() => {
-  return savedModels.value
+  return savedModels.value.filter(m => m.model_key === formData.model_key)
 })
 
 // 弹窗
@@ -255,7 +247,6 @@ const formData = reactive({
   name: '',
   device_id: null,
   point_ids_array: [],
-  model_source: 'saved', // 'saved' | 'new'
   model_key: 'lstm',
   base_model_id: '',
   interval: 1.0
@@ -299,14 +290,6 @@ async function loadSavedModels() {
   finally { loadingSavedModels.value = false }
 }
 
-function handleModelSourceChange() {
-  if (formData.model_source === 'saved') {
-    formData.base_model_id = ''
-  } else {
-    formData.base_model_id = ''
-  }
-}
-
 // 当设备变更时，加载点位
 watch(() => formData.device_id, async (newId) => {
   formData.point_ids_array = []
@@ -327,7 +310,6 @@ function openDialog(inst = null) {
     formData.device_id = inst.device_id
     formData.model_key = inst.model_key || 'lstm'
     formData.base_model_id = inst.base_model_id || ''
-    formData.model_source = inst.base_model_id ? 'saved' : 'new'
     formData.interval = inst.interval
     formData.point_ids_array = inst.point_ids
       ? inst.point_ids.split(',').map(Number).filter(n => !isNaN(n))
@@ -335,7 +317,6 @@ function openDialog(inst = null) {
   } else {
     formData.name = ''
     formData.device_id = null
-    formData.model_source = 'saved'
     formData.model_key = 'lstm'
     formData.base_model_id = ''
     formData.interval = 1.0
@@ -354,19 +335,14 @@ async function handleSubmit() {
     return
   }
 
-  // 根据模型来源确定 model_key 和 base_model_id
+  // 如果选了已保存模型，用该模型的 model_key；否则用 radio 选的类型
   let modelKey = formData.model_key
-  let baseModelId = ''
-  if (formData.model_source === 'saved') {
-    if (!formData.base_model_id) {
-      ElMessage.warning('请选择一个已保存的模型')
-      return
-    }
-    const saved = savedModels.value.find(m => m.model_id === formData.base_model_id)
+  let baseModelId = formData.base_model_id || ''
+  if (baseModelId) {
+    const saved = savedModels.value.find(m => m.model_id === baseModelId)
     if (saved) {
       modelKey = saved.model_key
     }
-    baseModelId = formData.base_model_id
   }
 
   submitting.value = true
@@ -576,9 +552,5 @@ function goToInstance(inst) {
 .smo-loss {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   color: var(--danger);
-}
-
-.smo-time {
-  color: var(--text-muted);
 }
 </style>
