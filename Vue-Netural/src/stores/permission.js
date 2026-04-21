@@ -90,6 +90,11 @@ function getDefaultMenus() {
           meta: { title: '已保存模型', icon: 'folder' }
         },
         {
+          name: 'PredictionInstances',
+          path: 'instances',
+          meta: { title: '预测实例管理', icon: 'list' }
+        },
+        {
           name: 'PredictionTraining',
           path: 'training',
           meta: { title: '模型训练', icon: 'cpu' }

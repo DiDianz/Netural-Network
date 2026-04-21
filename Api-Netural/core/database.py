@@ -165,6 +165,14 @@ def _migrate_menus(db):
                     path="config", component="system/config/index", menu_type="C",
                     visible="0", status="0", icon="setting"))
 
+        # 预测实例管理菜单（如果不存在）
+        if "预测实例管理" not in existing_names:
+            prediction_parent = existing_names.get("神经网络预测")
+            if prediction_parent:
+                new_menus.append(SysMenu(menu_name="预测实例管理", parent_id=prediction_parent.menu_id, order_num=6,
+                    path="instances", component="prediction/instances/index", menu_type="C",
+                    visible="0", status="0", icon="list"))
+
         if new_menus:
             db.add_all(new_menus)
 
