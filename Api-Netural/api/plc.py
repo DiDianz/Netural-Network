@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from core.plc_simulator import plc_simulator
 
 from core.database import get_db
 from core.plc_service import plc_manager
