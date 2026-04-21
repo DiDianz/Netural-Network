@@ -1,7 +1,6 @@
-<!-- src/views/prediction/plc/point/index.vue -->
+<!-- src/views/plc/point/index.vue -->
 <template>
   <div class="plc-point-page">
-    <!-- 顶部信息 -->
     <div class="page-header">
       <div class="header-left">
         <el-button @click="$router.back()" :icon="ArrowLeft" text>返回设备列表</el-button>
@@ -10,6 +9,7 @@
           <el-icon><Cpu /></el-icon>
           {{ deviceName || '所有设备' }}
         </span>
+        <el-tag v-if="isDeviceSimulated" type="warning" size="small" effect="dark">模拟中</el-tag>
       </div>
       <div class="header-right">
         <el-button type="primary" @click="handleAdd">
@@ -18,10 +18,16 @@
         <el-button @click="handleReadAll" :loading="readingAll" type="success" plain>
           读取全部
         </el-button>
+        <el-button
+          v-if="isDeviceSimulated"
+          :type="simPolling ? 'danger' : 'warning'"
+          @click="toggleSimPolling"
+        >
+          {{ simPolling ? '停止刷新' : '自动刷新模拟值' }}
+        </el-button>
       </div>
     </div>
 
-    <!-- 搜索栏 -->
     <div class="search-bar">
       <el-input
         v-model="keyword"
@@ -37,7 +43,6 @@
       </el-select>
     </div>
 
-    <!-- 点位表格 -->
     <el-table :data="points" stripe v-loading="loading" style="width: 100%">
       <el-table-column prop="point_name" label="点位名称" min-width="140">
         <template #default="{ row }">
@@ -71,6 +76,14 @@
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
+      <el-table-column label="模拟值" width="130" align="center">
+        <template #default="{ row }">
+          <span v-if="row._simValue !== undefined" class="sim-value">
+            {{ row._simValue }}
+          </span>
+          <span v-else class="text-muted">-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="handleReadOne(row)" :loading="row._reading">读取</el-button>
@@ -88,7 +101,6 @@
       </el-table-column>
     </el-table>
 
-    <!-- 分页 -->
     <div class="pagination-wrap">
       <el-pagination
         v-model:current-page="page"
@@ -100,7 +112,6 @@
       />
     </div>
 
-    <!-- 新增/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑点位' : '新增点位'"
@@ -110,12 +121,7 @@
       <el-form :model="form" label-width="100px" :rules="rules" ref="formRef">
         <el-form-item label="所属设备" prop="device_id">
           <el-select v-model="form.device_id" placeholder="选择设备" style="width: 100%" filterable>
-            <el-option
-              v-for="d in deviceList"
-              :key="d.id"
-              :label="d.name"
-              :value="d.id"
-            />
+            <el-option v-for="d in deviceList" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="点位名称" prop="point_name">
@@ -158,7 +164,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, ArrowLeft, Search, Cpu } from '@element-plus/icons-vue'
@@ -177,6 +183,11 @@ const pageSize = ref(20)
 const keyword = ref('')
 const activeFilter = ref(null)
 const readingAll = ref(false)
+
+// 设备模拟状态
+const isDeviceSimulated = ref(false)
+const simPolling = ref(false)
+let simTimer = null
 
 const deviceId = computed(() => {
   const id = route.query.device_id
@@ -215,9 +226,63 @@ onMounted(async () => {
   await loadDeviceList()
   if (deviceId.value) {
     form.value.device_id = deviceId.value
+    checkDeviceSimulated()
   }
   await loadPoints()
 })
+
+onUnmounted(() => {
+  stopSimPolling()
+  clearTimeout(searchTimer)
+})
+
+// 检查设备是否处于模拟状态
+async function checkDeviceSimulated() {
+  if (!deviceId.value) return
+  const device = deviceList.value.find(d => d.id === deviceId.value)
+  isDeviceSimulated.value = device?.status === 'simulated'
+  if (isDeviceSimulated.value) {
+    toggleSimPolling()
+  }
+}
+
+function toggleSimPolling() {
+  if (simPolling.value) {
+    stopSimPolling()
+  } else {
+    startSimPolling()
+  }
+}
+
+function startSimPolling() {
+  simPolling.value = true
+  fetchSimValues()
+  simTimer = setInterval(fetchSimValues, 2000)
+}
+
+function stopSimPolling() {
+  simPolling.value = false
+  if (simTimer) {
+    clearInterval(simTimer)
+    simTimer = null
+  }
+}
+
+async function fetchSimValues() {
+  if (!deviceId.value) return
+  try {
+    const res = await readPlcBatch(deviceId.value)
+    const results = res.data || []
+    for (const r of results) {
+      const pt = points.value.find(p => p.id === r.point_id)
+      if (pt) {
+        pt._simValue = r.success ? r.value : 'ERR'
+      }
+    }
+  } catch (e) {
+    // 静默失败，下次轮询继续
+  }
+}
 
 function handleSearch() {
   clearTimeout(searchTimer)
@@ -246,7 +311,7 @@ async function loadPoints() {
       limit: pageSize.value,
       offset: (page.value - 1) * pageSize.value
     })
-    points.value = (res.data || []).map(p => ({ ...p, _readValue: undefined, _reading: false }))
+    points.value = (res.data || []).map(p => ({ ...p, _readValue: undefined, _simValue: undefined, _reading: false }))
     total.value = res.total || 0
   } catch (e) {
     console.error('加载点位列表失败:', e)
@@ -275,7 +340,9 @@ function handleEdit(row) {
 async function handleSubmit() {
   try {
     await formRef.value.validate()
-    submitting.value = true
+  } catch { return }
+  submitting.value = true
+  try {
     if (isEdit.value) {
       await updatePlcPoint(form.value)
       ElMessage.success('更新成功')
@@ -402,6 +469,19 @@ async function handleReadAll() {
   font-weight: 600;
   color: #67c23a;
   font-size: 14px;
+}
+
+.sim-value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  color: #e6a23c;
+  font-size: 14px;
+  animation: simPulse 2s ease-in-out infinite;
+}
+
+@keyframes simPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .text-muted {
