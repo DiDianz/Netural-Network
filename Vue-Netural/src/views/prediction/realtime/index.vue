@@ -118,7 +118,7 @@
 
     <!-- 图表 -->
     <div class="chart-section">
-      <PredictionChart :chart-data="chartData" />
+      <PredictionChart :chart-data="chartData" :input-points="chartInputPoints" />
     </div>
 
     <!-- 设备点位信息（独立模式，选择设备后显示） -->
@@ -254,6 +254,15 @@ const displayPoints = computed(() => {
     return devicePoints.value
   }
   return devicePoints.value.filter(p => selectedPointIds.value.includes(p.id))
+})
+
+const chartInputPoints = computed(() => {
+  return displayPoints.value.map(p => ({
+    point_name: p.point_name,
+    db_number: p.db_number,
+    start_address: p.start_address,
+    data_type: p.data_type
+  }))
 })
 
 function modelTagType(key) {

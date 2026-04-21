@@ -11,7 +11,7 @@ import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import {
   GridComponent, TooltipComponent, LegendComponent,
-  DataZoomComponent, MarkLineComponent
+  DataZoomComponent, MarkLineComponent, GraphicComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { graphic } from 'echarts/core'
@@ -19,17 +19,69 @@ import { graphic } from 'echarts/core'
 echarts.use([
   LineChart, CanvasRenderer,
   GridComponent, TooltipComponent, LegendComponent,
-  DataZoomComponent, MarkLineComponent
+  DataZoomComponent, MarkLineComponent, GraphicComponent
 ])
 
 const props = defineProps({
   chartData: { type: Object, required: true },
   // 新增：多系列数据
-  multiChartData: { type: Object, default: null }
+  multiChartData: { type: Object, default: null },
+  // 新增：传入的点位名称列表
+  inputPoints: { type: Array, default: () => [] }
 })
 
 const chartRef = ref(null)
 const chartInstance = shallowRef(null)
+
+// 构建右上角点位信息 + 预测值的 graphic 元素
+function buildInfoGraphic(latestPrediction) {
+  const points = props.inputPoints
+  if (!points || points.length === 0) return []
+
+  const items = []
+  // 标题
+  items.push({
+    type: 'text',
+    right: 20, top: 12,
+    style: {
+      text: '输入点位',
+      fill: '#888',
+      font: '600 12px sans-serif',
+      textAlign: 'right'
+    }
+  })
+
+  // 每个点位一行
+  points.forEach((p, i) => {
+    items.push({
+      type: 'text',
+      right: 20, top: 30 + i * 18,
+      style: {
+        text: `${p.point_name}`,
+        fill: '#aaa',
+        font: '12px sans-serif',
+        textAlign: 'right'
+      }
+    })
+  })
+
+  // 最新预测值
+  if (latestPrediction != null) {
+    const predTop = 30 + points.length * 18 + 6
+    items.push({
+      type: 'text',
+      right: 20, top: predTop,
+      style: {
+        text: `预测值: ${Number(latestPrediction).toFixed(6)}`,
+        fill: '#4a9eff',
+        font: '700 13px "JetBrains Mono", "Fira Code", monospace',
+        textAlign: 'right'
+      }
+    })
+  }
+
+  return items
+}
 
 function initChart() {
   if (!chartRef.value) return
@@ -110,7 +162,8 @@ watch(
     chart.setOption({
       xAxis: { data: data.times },
       legend: { data: data.hasActualData ? ['预测值', '实际值'] : ['预测值'] },
-      series: series
+      series: series,
+      graphic: buildInfoGraphic(data.predictions.length > 0 ? data.predictions[data.predictions.length - 1] : null)
     }, { notMerge: false, lazyUpdate: true })
   }
 )
@@ -175,6 +228,12 @@ watch(
       })
     }
 
+    // 取最后一个系列的最新预测值
+    let latestPred = null
+    if (data.series.length > 0 && data.series[0].predictions.length > 0) {
+      latestPred = data.series[0].predictions[data.series[0].predictions.length - 1]
+    }
+
     chart.setOption({
       xAxis: { data: data.times },
       legend: {
@@ -183,9 +242,28 @@ watch(
         right: 20,
         textStyle: { color: '#888' }
       },
-      series: series
+      series: series,
+      graphic: buildInfoGraphic(latestPred)
     }, { notMerge: true, lazyUpdate: true })
   }
+)
+
+// 点位列表变化时刷新右上角信息
+watch(
+  () => props.inputPoints,
+  function () {
+    const chart = chartInstance.value
+    if (!chart) return
+    const data = props.chartData
+    let latestPred = null
+    if (data.predictions && data.predictions.length > 0) {
+      latestPred = data.predictions[data.predictions.length - 1]
+    }
+    chart.setOption({
+      graphic: buildInfoGraphic(latestPred)
+    }, { replaceMerge: ['graphic'], lazyUpdate: true })
+  },
+  { deep: true }
 )
 
 function handleResize() {
