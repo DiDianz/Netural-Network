@@ -39,6 +39,7 @@ async def list_instances(db: Session = Depends(get_db)):
             "device_connected": device_connected,
             "point_ids": inst.point_ids or "",
             "model_key": inst.model_key,
+            "base_model_id": inst.base_model_id or "",
             "interval": (inst.interval or 10) / 10.0,
             "order_num": inst.order_num,
             "is_active": inst.is_active,
@@ -59,6 +60,7 @@ async def get_instance(instance_id: int = Query(...), db: Session = Depends(get_
         "device_id": inst.device_id,
         "point_ids": inst.point_ids or "",
         "model_key": inst.model_key,
+        "base_model_id": inst.base_model_id or "",
         "interval": (inst.interval or 10) / 10.0,
         "order_num": inst.order_num,
         "is_active": inst.is_active,
@@ -71,12 +73,21 @@ async def add_instance(
     device_id: int = Query(...),
     point_ids: str = Query("", description="逗号分隔的点位ID"),
     model_key: str = Query("lstm"),
+    base_model_id: str = Query("", description="已保存模型版本ID"),
     interval: float = Query(1.0, ge=0.1, le=30.0),
     db: Session = Depends(get_db)
 ):
     """新增预测实例"""
     if model_key not in model_manager.models:
         raise HTTPException(400, f"模型不存在: {model_key}")
+
+    # 如果指定了 base_model_id，校验它是否存在且类型匹配
+    if base_model_id:
+        if base_model_id not in model_manager.saved_models:
+            raise HTTPException(400, f"已保存模型不存在: {base_model_id}")
+        saved = model_manager.saved_models[base_model_id]
+        if saved["model_key"] != model_key:
+            raise HTTPException(400, f"模型类型不匹配: 已保存模型是 {saved['model_key']}，但选择了 {model_key}")
 
     from models.plc_device import PlcDevice
     device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
@@ -94,6 +105,7 @@ async def add_instance(
         device_id=device_id,
         point_ids=point_ids,
         model_key=model_key,
+        base_model_id=base_model_id,
         interval=int(interval * 10),
         order_num=next_order,
         is_active=1
@@ -111,6 +123,7 @@ async def update_instance(
     device_id: int = Query(None),
     point_ids: str = Query(None),
     model_key: str = Query(None),
+    base_model_id: str = Query(None),
     interval: float = Query(None, ge=0.1, le=30.0),
     is_active: int = Query(None),
     db: Session = Depends(get_db)
@@ -134,6 +147,10 @@ async def update_instance(
         if model_key not in model_manager.models:
             raise HTTPException(400, f"模型不存在: {model_key}")
         inst.model_key = model_key
+    if base_model_id is not None:
+        if base_model_id and base_model_id not in model_manager.saved_models:
+            raise HTTPException(400, f"已保存模型不存在: {base_model_id}")
+        inst.base_model_id = base_model_id
     if interval is not None:
         inst.interval = int(interval * 10)
     if is_active is not None:
@@ -173,11 +190,17 @@ async def instance_predict_stream(
     device_id = inst.device_id
     model_key = inst.model_key
     interval = (inst.interval or 10) / 10.0
+    base_model_id = inst.base_model_id or ""
 
     if not plc_manager.is_connected(device_id):
         raise HTTPException(400, f"PLC 设备 {device_id} 未连接")
     if model_key not in model_manager.models:
         raise HTTPException(400, f"模型不存在: {model_key}")
+
+    # 如果指定了已保存模型，先加载权重
+    if base_model_id and base_model_id in model_manager.saved_models:
+        model_manager.load_model_weights(model_key, base_model_id)
+        print(f"实例 {inst.id}: 已加载模型权重 {base_model_id}")
 
     # 获取点位
     query = db.query(PlcDbPoint).filter(

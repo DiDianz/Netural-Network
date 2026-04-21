@@ -35,6 +35,12 @@
             <el-tag :type="modelTagType(inst.model_key)" size="small">
               {{ inst.model_key.toUpperCase() }}
             </el-tag>
+            <el-tag v-if="inst.base_model_id" type="warning" size="small" effect="plain">
+              已训练
+            </el-tag>
+            <el-tag v-else type="info" size="small" effect="plain">
+              默认权重
+            </el-tag>
           </div>
           <div class="ic-info-row">
             <span class="ic-label">设备</span>
@@ -135,6 +141,41 @@
         </el-form-item>
 
         <el-form-item label="预测模型" required>
+          <el-radio-group v-model="formData.model_source" size="default" @change="handleModelSourceChange">
+            <el-radio-button value="saved">选择已保存模型</el-radio-button>
+            <el-radio-button value="new">新建模型</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <!-- 已保存模型选择 -->
+        <el-form-item v-if="formData.model_source === 'saved'" label="模型版本" required>
+          <el-select
+            v-model="formData.base_model_id"
+            placeholder="请选择已保存的模型"
+            style="width: 100%"
+            filterable
+            :loading="loadingSavedModels"
+          >
+            <el-option
+              v-for="m in filteredSavedModels"
+              :key="m.model_id"
+              :label="m.name || m.display_name"
+              :value="m.model_id"
+            >
+              <div class="saved-model-option">
+                <span class="smo-name">{{ m.name || m.display_name }}</span>
+                <div class="smo-meta">
+                  <el-tag :type="modelTagType(m.model_key)" size="small">{{ m.model_key.toUpperCase() }}</el-tag>
+                  <span class="smo-loss">Loss: {{ m.best_val_loss }}</span>
+                  <span class="smo-time">{{ m.trained_at }}</span>
+                </div>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
+
+        <!-- 新建模型选择 -->
+        <el-form-item v-if="formData.model_source === 'new'" label="模型类型" required>
           <el-radio-group v-model="formData.model_key">
             <el-radio-button value="lstm">LSTM</el-radio-button>
             <el-radio-button value="gru">GRU</el-radio-button>
@@ -159,12 +200,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Edit, Delete, Monitor } from '@element-plus/icons-vue'
 import { getInstanceList, addInstance, updateInstance, deleteInstance } from '../../../api/instance'
 import { getPlcDeviceList, getPlcPointList } from '../../../api/plc'
+import { getSavedModels } from '../../../api/model'
 
 const router = useRouter()
 
@@ -174,6 +216,13 @@ const allDevices = ref([])
 const loadingDevices = ref(false)
 const devicePoints = ref([])
 const loadingPoints = ref(false)
+const savedModels = ref([])
+const loadingSavedModels = ref(false)
+
+// 已保存模型按类型筛选
+const filteredSavedModels = computed(() => {
+  return savedModels.value
+})
 
 // 弹窗
 const dialogVisible = ref(false)
@@ -183,7 +232,9 @@ const formData = reactive({
   name: '',
   device_id: null,
   point_ids_array: [],
+  model_source: 'saved', // 'saved' | 'new'
   model_key: 'lstm',
+  base_model_id: '',
   interval: 1.0
 })
 
@@ -192,7 +243,7 @@ function modelTagType(key) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadInstances(), loadDevices()])
+  await Promise.all([loadInstances(), loadDevices(), loadSavedModels()])
 })
 
 async function loadInstances() {
@@ -216,6 +267,23 @@ async function loadDevices() {
   finally { loadingDevices.value = false }
 }
 
+async function loadSavedModels() {
+  loadingSavedModels.value = true
+  try {
+    const res = await getSavedModels()
+    savedModels.value = res.data || []
+  } catch (e) { /* ignore */ }
+  finally { loadingSavedModels.value = false }
+}
+
+function handleModelSourceChange() {
+  if (formData.model_source === 'saved') {
+    formData.base_model_id = ''
+  } else {
+    formData.base_model_id = ''
+  }
+}
+
 // 当设备变更时，加载点位
 watch(() => formData.device_id, async (newId) => {
   formData.point_ids_array = []
@@ -234,7 +302,9 @@ function openDialog(inst = null) {
   if (inst) {
     formData.name = inst.name
     formData.device_id = inst.device_id
-    formData.model_key = inst.model_key
+    formData.model_key = inst.model_key || 'lstm'
+    formData.base_model_id = inst.base_model_id || ''
+    formData.model_source = inst.base_model_id ? 'saved' : 'new'
     formData.interval = inst.interval
     formData.point_ids_array = inst.point_ids
       ? inst.point_ids.split(',').map(Number).filter(n => !isNaN(n))
@@ -242,7 +312,9 @@ function openDialog(inst = null) {
   } else {
     formData.name = ''
     formData.device_id = null
+    formData.model_source = 'saved'
     formData.model_key = 'lstm'
+    formData.base_model_id = ''
     formData.interval = 1.0
     formData.point_ids_array = []
   }
@@ -259,13 +331,29 @@ async function handleSubmit() {
     return
   }
 
+  // 根据模型来源确定 model_key 和 base_model_id
+  let modelKey = formData.model_key
+  let baseModelId = ''
+  if (formData.model_source === 'saved') {
+    if (!formData.base_model_id) {
+      ElMessage.warning('请选择一个已保存的模型')
+      return
+    }
+    const saved = savedModels.value.find(m => m.model_id === formData.base_model_id)
+    if (saved) {
+      modelKey = saved.model_key
+    }
+    baseModelId = formData.base_model_id
+  }
+
   submitting.value = true
   try {
     const params = {
       name: formData.name.trim(),
       device_id: formData.device_id,
       point_ids: formData.point_ids_array.join(','),
-      model_key: formData.model_key,
+      model_key: modelKey,
+      base_model_id: baseModelId,
       interval: formData.interval
     }
 
@@ -430,5 +518,34 @@ function goToInstance(inst) {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+}
+
+/* 已保存模型选项 */
+.saved-model-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.smo-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.smo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.smo-loss {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--danger);
+}
+
+.smo-time {
+  color: var(--text-muted);
 }
 </style>
