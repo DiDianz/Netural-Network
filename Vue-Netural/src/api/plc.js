@@ -39,6 +39,19 @@ export function disconnectAllPlc() {
   return request.post('/plc/device/disconnect-all')
 }
 
+// ========== 模拟PLC ==========
+export function simulatePlc(deviceId, params) {
+  return request.post('/plc/device/simulate', null, {
+    params: { device_id: deviceId, ...params }
+  })
+}
+
+export function stopSimulatePlc(deviceId) {
+  return request.post('/plc/device/simulate/stop', null, {
+    params: { device_id: deviceId }
+  })
+}
+
 // ========== PLC DB 点位管理 ==========
 export function getPlcPointList(params) {
   return request.get('/plc/point/list', { params })
