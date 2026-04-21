@@ -468,7 +468,7 @@ function handleDataSourceChange() {
   }
 }
 
-function handleStart() {
+async function handleStart() {
   if (!selectedSavedModelId.value) {
     ElMessage.warning('请先选择一个已保存的模型')
     return
@@ -484,6 +484,20 @@ function handleStart() {
     }
     startPlcStream()
   }
+
+  // 确保加载并切换到选中的模型
+  try {
+    await loadSavedModel(selectedSavedModelId.value)
+    const model = savedModels.value.find(m => m.model_id === selectedSavedModelId.value)
+    if (model) {
+      await switchModel(model.model_key)
+      currentModelKey.value = model.model_key
+    }
+  } catch (e) {
+    ElMessage.error('加载模型失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message))
+    return
+  }
+
   // 使用当前选中的模型类型进行推理
   startStream(interval.value, currentModelKey.value)
 }
