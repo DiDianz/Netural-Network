@@ -12,7 +12,8 @@ export const usePermissionStore = defineStore('permission', {
         const { getMenuList } = await import('../api/menu')
         const res = await getMenuList()
         let apiMenus = res.data || res || []
-        // 合并默认菜单（确保 PLC 等新增模块始终可见）
+        // 过滤掉首页（侧边栏已硬编码），再合并默认菜单
+        apiMenus = apiMenus.filter(m => m.path !== '/index')
         this.sidebarMenus = mergeDefaultMenus(apiMenus)
       } catch (error) {
         console.warn('获取菜单失败，使用默认菜单:', error)
@@ -26,16 +27,12 @@ export const usePermissionStore = defineStore('permission', {
   }
 })
 
-/**
- * 合并默认菜单：如果 API 返回的菜单中缺少某个默认菜单，则补上
- */
 function mergeDefaultMenus(apiMenus) {
   const defaults = getDefaultMenus()
   const apiPaths = new Set(apiMenus.map(m => m.path))
 
   for (const dm of defaults) {
     if (!apiPaths.has(dm.path)) {
-      // 默认菜单不在 API 返回中，追加到末尾
       apiMenus.push(dm)
     }
   }
@@ -44,12 +41,6 @@ function mergeDefaultMenus(apiMenus) {
 
 function getDefaultMenus() {
   return [
-    {
-      name: 'Index',
-      path: '/index',
-      hidden: false,
-      meta: { title: '首页', icon: 'home' }
-    },
     {
       name: 'System',
       path: '/system',
