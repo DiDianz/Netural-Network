@@ -24,64 +24,49 @@ echarts.use([
 
 const props = defineProps({
   chartData: { type: Object, required: true },
-  // 新增：多系列数据
   multiChartData: { type: Object, default: null },
-  // 新增：传入的点位名称列表
+  // 传入的点位列表：[{ point_name, description, color, history: [] }]
   inputPoints: { type: Array, default: () => [] }
 })
 
 const chartRef = ref(null)
 const chartInstance = shallowRef(null)
 
-// 点位配色（与曲线颜色一致）
+// 点位配色
 const POINT_COLORS = [
   '#4a9eff', '#f97316', '#22c55e', '#a855f7',
   '#ec4899', '#14b8a6', '#eab308', '#6366f1',
   '#ef4444', '#06b6d4'
 ]
 
-// 构建右上角点位信息 + 预测值的 graphic 元素
-function buildInfoGraphic(latestPrediction) {
+// 构建右上角：仅显示注释 + 颜色
+function buildInfoGraphic() {
   const points = props.inputPoints
   if (!points || points.length === 0) return []
 
   const items = []
   let topOffset = 12
 
-  // 标题：输入点位
-  items.push({
-    type: 'text',
-    right: 20, top: topOffset,
-    style: {
-      text: '📋 输入点位',
-      fill: '#888',
-      font: '600 12px sans-serif',
-      textAlign: 'right'
-    }
-  })
-  topOffset += 22
-
-  // 每个点位一行：颜色圆点 + 点位名称 + 当前值
   points.forEach((p, i) => {
     const color = POINT_COLORS[i % POINT_COLORS.length]
-    const valText = p.current_value != null ? `  →  ${Number(p.current_value).toFixed(4)}` : ''
+    const label = p.description || p.point_name
 
     // 颜色圆点
     items.push({
       type: 'circle',
       shape: { cx: 0, cy: 0, r: 4 },
-      right: 20 + measureTextWidth(`${p.point_name}${valText}`) + 10,
+      right: 20 + label.length * 7.2 + 10,
       top: topOffset + 7,
       style: { fill: color }
     })
 
-    // 点位名称 + 值
+    // 注释文字
     items.push({
       type: 'text',
       right: 20, top: topOffset,
       style: {
-        text: `${p.point_name}${valText}`,
-        fill: p.current_value != null ? '#ccc' : '#777',
+        text: label,
+        fill: '#ccc',
         font: '12px "JetBrains Mono", "Fira Code", monospace',
         textAlign: 'right'
       }
@@ -89,51 +74,7 @@ function buildInfoGraphic(latestPrediction) {
     topOffset += 20
   })
 
-  // 分隔线
-  topOffset += 4
-  items.push({
-    type: 'text',
-    right: 20, top: topOffset,
-    style: {
-      text: '─────────────────',
-      fill: '#333',
-      font: '11px monospace',
-      textAlign: 'right'
-    }
-  })
-  topOffset += 18
-
-  // 预测值
-  if (latestPrediction != null) {
-    items.push({
-      type: 'text',
-      right: 20, top: topOffset,
-      style: {
-        text: `🎯 预测值`,
-        fill: '#888',
-        font: '600 11px sans-serif',
-        textAlign: 'right'
-      }
-    })
-    topOffset += 20
-    items.push({
-      type: 'text',
-      right: 20, top: topOffset,
-      style: {
-        text: `${Number(latestPrediction).toFixed(6)}`,
-        fill: '#4a9eff',
-        font: '700 16px "JetBrains Mono", "Fira Code", monospace',
-        textAlign: 'right'
-      }
-    })
-  }
-
   return items
-}
-
-// 简易文本宽度估算（用于圆点定位）
-function measureTextWidth(text) {
-  return text.length * 7.2
 }
 
 function initChart() {
@@ -178,31 +119,53 @@ function initChart() {
   })
 }
 
-// 单系列模式（兼容原有逻辑）
+// 主更新逻辑：预测线 + 每个点位的趋势线
 watch(
-  () => props.chartData.times.length,
-  function (newLen) {
-    // 如果有多个系列数据，跳过单系列更新
-    if (props.multiChartData && props.multiChartData.series && props.multiChartData.series.length > 0) return
-
+  () => [props.chartData._len, props.inputPoints.length],
+  function () {
     const chart = chartInstance.value
     const data = props.chartData
     if (!chart) return
+    // 多系列模式跳过
+    if (props.multiChartData && props.multiChartData.series && props.multiChartData.series.length > 0) return
 
-    if (newLen === 0) {
-      chart.setOption({ series: [] }, { notMerge: false, lazyUpdate: true })
+    if (data.times.length === 0) {
+      chart.setOption({ series: [], legend: { data: [] } }, { notMerge: true, lazyUpdate: true })
       return
     }
 
+    const legendData = ['预测值']
     const series = [{
       name: '预测值', type: 'line', data: data.predictions,
       smooth: 0.3,
       lineStyle: { color: '#4a9eff', width: 2.5 },
       itemStyle: { color: '#4a9eff' },
-      showSymbol: false
+      showSymbol: false,
+      z: 10
     }]
 
+    // 每个设备点的趋势线
+    const points = props.inputPoints
+    points.forEach((p, i) => {
+      const color = POINT_COLORS[i % POINT_COLORS.length]
+      const label = p.description || p.point_name
+      if (p.history && p.history.length > 0) {
+        legendData.push(label)
+        series.push({
+          name: label,
+          type: 'line',
+          data: p.history,
+          smooth: 0.3,
+          lineStyle: { color: color, width: 1.5 },
+          itemStyle: { color: color },
+          showSymbol: false,
+          yAxisIndex: 0
+        })
+      }
+    })
+
     if (data.hasActualData && data.actuals.length > 0) {
+      legendData.push('实际值')
       series.push({
         name: '实际值', type: 'line', data: data.actuals,
         smooth: 0.3,
@@ -214,14 +177,15 @@ watch(
 
     chart.setOption({
       xAxis: { data: data.times },
-      legend: { data: data.hasActualData ? ['预测值', '实际值'] : ['预测值'] },
+      legend: { data: legendData, top: 10, right: 20, textStyle: { color: '#888' } },
       series: series,
-      graphic: buildInfoGraphic(data.predictions.length > 0 ? data.predictions[data.predictions.length - 1] : null)
-    }, { notMerge: false, lazyUpdate: true })
-  }
+      graphic: buildInfoGraphic()
+    }, { notMerge: true, lazyUpdate: true })
+  },
+  { deep: true }
 )
 
-// 多系列模式
+// 多系列模式（保留原有逻辑）
 watch(
   () => props.multiChartData ? props.multiChartData._len : 0,
   function (newLen) {
@@ -240,34 +204,23 @@ watch(
     const series = []
 
     for (const s of data.series) {
-      // 预测值主线
       legendData.push(s.name)
       series.push({
-        name: s.name,
-        type: 'line',
-        data: s.predictions,
+        name: s.name, type: 'line', data: s.predictions,
         smooth: 0.3,
         lineStyle: { color: s.color, width: 2.5 },
         itemStyle: { color: s.color },
         showSymbol: false
       })
-
-      // 置信区间上界
       series.push({
-        name: s.name + ' 上界',
-        type: 'line',
-        data: s.upper,
+        name: s.name + ' 上界', type: 'line', data: s.upper,
         smooth: 0.3,
         lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
         itemStyle: { color: s.color, opacity: 0.3 },
         showSymbol: false
       })
-
-      // 置信区间下界
       series.push({
-        name: s.name + ' 下界',
-        type: 'line',
-        data: s.lower,
+        name: s.name + ' 下界', type: 'line', data: s.lower,
         smooth: 0.3,
         lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
         itemStyle: { color: s.color, opacity: 0.3 },
@@ -281,42 +234,13 @@ watch(
       })
     }
 
-    // 取最后一个系列的最新预测值
-    let latestPred = null
-    if (data.series.length > 0 && data.series[0].predictions.length > 0) {
-      latestPred = data.series[0].predictions[data.series[0].predictions.length - 1]
-    }
-
     chart.setOption({
       xAxis: { data: data.times },
-      legend: {
-        data: legendData,
-        top: 10,
-        right: 20,
-        textStyle: { color: '#888' }
-      },
+      legend: { data: legendData, top: 10, right: 20, textStyle: { color: '#888' } },
       series: series,
-      graphic: buildInfoGraphic(latestPred)
+      graphic: buildInfoGraphic()
     }, { notMerge: true, lazyUpdate: true })
   }
-)
-
-// 点位列表变化时刷新右上角信息
-watch(
-  () => props.inputPoints,
-  function () {
-    const chart = chartInstance.value
-    if (!chart) return
-    const data = props.chartData
-    let latestPred = null
-    if (data.predictions && data.predictions.length > 0) {
-      latestPred = data.predictions[data.predictions.length - 1]
-    }
-    chart.setOption({
-      graphic: buildInfoGraphic(latestPred)
-    }, { replaceMerge: ['graphic'], lazyUpdate: true })
-  },
-  { deep: true }
 )
 
 function handleResize() {

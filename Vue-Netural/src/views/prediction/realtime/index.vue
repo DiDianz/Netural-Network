@@ -302,25 +302,35 @@ const displayPoints = computed(() => {
 })
 
 const chartInputPoints = computed(() => {
-  // 实例模式：使用实例点位信息 + 实时值
+  const MAX_HISTORY = 500
+  // 实例模式：使用实例点位信息
   if (isInstanceMode.value) {
-    return instancePointInfo.value.map(p => ({
-      point_name: p.point_name,
-      db_number: p.db_number,
-      start_address: p.start_address,
-      data_type: p.data_type,
-      current_value: p.current_value
-    }))
+    return instancePointInfo.value.map(p => {
+      // 维护历史值
+      if (p.current_value != null) {
+        if (!p._history) p._history = []
+        p._history.push(p.current_value)
+        if (p._history.length > MAX_HISTORY) p._history.shift()
+      }
+      return {
+        point_name: p.point_name,
+        description: p.description || p.point_name,
+        history: p._history ? [...p._history] : []
+      }
+    })
   }
   // 独立模式
   return displayPoints.value.map(p => {
     const val = actualValues.value[p.id] ?? simulatedValues.value[p.id] ?? null
+    if (!p._history) p._history = []
+    if (val != null) {
+      p._history.push(val)
+      if (p._history.length > MAX_HISTORY) p._history.shift()
+    }
     return {
       point_name: p.point_name,
-      db_number: p.db_number,
-      start_address: p.start_address,
-      data_type: p.data_type,
-      current_value: val
+      description: p.description || p.point_name,
+      history: [...p._history]
     }
   })
 })
@@ -639,6 +649,12 @@ function handleStop() {
 function handleClear() {
   store.clearData()
   plcLiveValues.value = []
+  // 清空点位历史
+  if (isInstanceMode.value) {
+    instancePointInfo.value.forEach(p => { p._history = [] })
+  } else {
+    devicePoints.value.forEach(p => { p._history = [] })
+  }
 }
 </script>
 
