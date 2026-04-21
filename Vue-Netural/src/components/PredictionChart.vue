@@ -33,6 +33,13 @@ const props = defineProps({
 const chartRef = ref(null)
 const chartInstance = shallowRef(null)
 
+// 点位配色（与曲线颜色一致）
+const POINT_COLORS = [
+  '#4a9eff', '#f97316', '#22c55e', '#a855f7',
+  '#ec4899', '#14b8a6', '#eab308', '#6366f1',
+  '#ef4444', '#06b6d4'
+]
+
 // 构建右上角点位信息 + 预测值的 graphic 元素
 function buildInfoGraphic(latestPrediction) {
   const points = props.inputPoints
@@ -54,9 +61,21 @@ function buildInfoGraphic(latestPrediction) {
   })
   topOffset += 22
 
-  // 每个点位一行：点位名称 + 当前值
-  points.forEach((p) => {
+  // 每个点位一行：颜色圆点 + 点位名称 + 当前值
+  points.forEach((p, i) => {
+    const color = POINT_COLORS[i % POINT_COLORS.length]
     const valText = p.current_value != null ? `  →  ${Number(p.current_value).toFixed(4)}` : ''
+
+    // 颜色圆点
+    items.push({
+      type: 'circle',
+      shape: { cx: 0, cy: 0, r: 4 },
+      right: 20 + measureTextWidth(`${p.point_name}${valText}`) + 10,
+      top: topOffset + 7,
+      style: { fill: color }
+    })
+
+    // 点位名称 + 值
     items.push({
       type: 'text',
       right: 20, top: topOffset,
@@ -110,6 +129,11 @@ function buildInfoGraphic(latestPrediction) {
   }
 
   return items
+}
+
+// 简易文本宽度估算（用于圆点定位）
+function measureTextWidth(text) {
+  return text.length * 7.2
 }
 
 function initChart() {
