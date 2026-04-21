@@ -1,12 +1,15 @@
 # api/predict.py
 import json
 import asyncio
-from fastapi import APIRouter, Query, Depends
+import time
+import numpy as np
+from fastapi import APIRouter, Query, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.model_manager import model_manager
 from core.data_manager import data_manager
+from core.plc_service import plc_manager
 from models.predict_history import PredictHistory
 
 router = APIRouter(prefix="/predict", tags=["预测"])
@@ -93,6 +96,196 @@ async def get_actual_values(
     ids = [f.strip() for f in file_ids.split(",") if f.strip()] if file_ids else None
     values = data_manager.get_all_actual_values(limit=limit, file_ids=ids) # type: ignore
     return {"code": 200, "data": values}
+
+
+# ========== 多 PLC 多模型同时预测 ==========
+@router.get("/multi-stream")
+async def multi_predict_stream(
+    devices: str = Query(..., description='JSON: [{"device_id":1,"point_ids":"1,2"}]'),
+    model_keys: str = Query(..., description="逗号分隔: lstm,gru,transformer"),
+    interval: float = Query(1.0, ge=0.1, le=30.0),
+    db: Session = Depends(get_db)
+):
+    """
+    多 PLC + 多模型 并行预测 SSE 流
+    每次 tick: 读取所有 PLC 数据 → 所有模型推理 → 统一推送
+    """
+    from models.plc_db_point import PlcDbPoint
+
+    # 解析设备列表
+    try:
+        device_list = json.loads(devices)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "devices 参数格式错误，请传 JSON 数组")
+
+    if not device_list:
+        raise HTTPException(400, "至少选择一个 PLC 设备")
+
+    # 解析模型列表
+    keys = [k.strip() for k in model_keys.split(",") if k.strip()]
+    for k in keys:
+        if k not in model_manager.models:
+            raise HTTPException(400, f"模型不存在: {k}")
+
+    # 构建每个设备的点位信息
+    device_points = {}
+    for dev in device_list:
+        did = dev.get("device_id")
+        if did is None:
+            raise HTTPException(400, "device_id 不能为空")
+        if not plc_manager.is_connected(did):
+            raise HTTPException(400, f"PLC 设备 {did} 未连接")
+
+        query = db.query(PlcDbPoint).filter(
+            PlcDbPoint.device_id == did,
+            PlcDbPoint.is_active == 1
+        )
+        point_ids_str = dev.get("point_ids", "")
+        if point_ids_str:
+            pids = [int(x.strip()) for x in point_ids_str.split(",") if x.strip()]
+            query = query.filter(PlcDbPoint.id.in_(pids))
+
+        points = query.all()
+        if not points:
+            raise HTTPException(400, f"PLC 设备 {did} 没有可用的启用点位")
+
+        device_points[did] = [{
+            "id": p.id, "point_name": p.point_name,
+            "db_number": p.db_number, "start_address": p.start_address,
+            "data_type": p.data_type, "bit_index": p.bit_index
+        } for p in points]
+
+    # 每个模型维护独立的 buffer（从 PLC 读取的真实数据填充）
+    model_buffers = {}
+    for k in keys:
+        model_manager.models[k]["model"].eval()
+        model_buffers[k] = {
+            "values": [],  # 最近 N 步的 PLC 数值
+            "device_name": ""
+        }
+
+    async def event_generator():
+        try:
+            tick = 0
+            while True:
+                tick += 1
+                timestamp = time.time()
+
+                # 1. 并行读取所有 PLC
+                plc_data = {}
+                for did, pts in device_points.items():
+                    result = plc_manager.read_multiple(did, pts)
+                    if result["success"]:
+                        values = []
+                        for item in result["data"]:
+                            if item["success"] and item["value"] is not None:
+                                values.append(float(item["value"]))
+                            else:
+                                values.append(0.0)
+                        plc_data[did] = {
+                            "device_id": did,
+                            "points": result["data"],
+                            "feature_vector": values
+                        }
+                    else:
+                        plc_data[did] = {
+                            "device_id": did,
+                            "points": [],
+                            "feature_vector": [],
+                            "error": result["msg"]
+                        }
+
+                # 2. 用 PLC 数据更新各模型 buffer 并推理
+                predictions = []
+                for k in keys:
+                    model = model_manager.models[k]["model"]
+                    model.eval()
+                    buf = model_buffers[k]
+
+                    # 将 PLC 数据转为特征向量（填充到 input_dim）
+                    for did, pdata in plc_data.items():
+                        feat = pdata["feature_vector"]
+                        if not feat:
+                            continue
+                        # 截断或填充到 input_dim
+                        padded = feat[:model_manager.input_dim]
+                        while len(padded) < model_manager.input_dim:
+                            padded.append(0.0)
+                        buf["values"].append(padded)
+                        buf["device_name"] = f"PLC-{did}"
+
+                    # 保持 window_size 长度
+                    while len(buf["values"]) > model_manager.window_size:
+                        buf["values"].pop(0)
+
+                    # 如果数据不够窗口大小，用随机填充
+                    while len(buf["values"]) < model_manager.window_size:
+                        buf["values"].insert(0, list(np.random.randn(model_manager.input_dim).astype(float)))
+
+                    # 推理
+                    try:
+                        import torch
+                        input_seq = np.array(buf["values"], dtype=np.float32)
+                        input_tensor = torch.tensor(input_seq).unsqueeze(0).to(model_manager.device)
+
+                        with torch.no_grad():
+                            pred = model(input_tensor).cpu().numpy()[0]
+
+                        # MC Dropout 不确定性估计
+                        model.train()
+                        mc_preds = []
+                        for _ in range(10):
+                            with torch.no_grad():
+                                p = model(input_tensor).cpu().numpy()[0]
+                            mc_preds.append(float(p))
+                        model.eval()
+
+                        mean_pred = float(np.mean(mc_preds))
+                        std_pred = float(np.std(mc_preds))
+
+                        predictions.append({
+                            "model_key": k,
+                            "model_name": model_manager.models[k]["display_name"],
+                            "prediction": round(mean_pred, 6),
+                            "confidence_upper": round(mean_pred + 2 * std_pred, 6),
+                            "confidence_lower": round(mean_pred - 2 * std_pred, 6),
+                            "uncertainty": round(std_pred, 6),
+                            "tick": tick
+                        })
+                        model_manager.models[k]["total_predictions"] += 1
+
+                    except Exception as e:
+                        predictions.append({
+                            "model_key": k,
+                            "model_name": model_manager.models[k]["display_name"],
+                            "error": str(e),
+                            "tick": tick
+                        })
+
+                # 3. 组装 payload 并推送
+                payload = {
+                    "timestamp": timestamp,
+                    "tick": tick,
+                    "plc_data": {
+                        str(did): {
+                            "device_id": did,
+                            "points": pdata["points"]
+                        } for did, pdata in plc_data.items()
+                    },
+                    "predictions": predictions
+                }
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                await asyncio.sleep(interval)
+
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
 
 
 # # api/predict.py

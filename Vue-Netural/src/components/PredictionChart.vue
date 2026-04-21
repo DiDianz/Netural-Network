@@ -14,6 +14,7 @@ import {
   DataZoomComponent, MarkLineComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { graphic } from 'echarts/core'
 
 echarts.use([
   LineChart, CanvasRenderer,
@@ -22,7 +23,9 @@ echarts.use([
 ])
 
 const props = defineProps({
-  chartData: { type: Object, required: true }
+  chartData: { type: Object, required: true },
+  // 新增：多系列数据
+  multiChartData: { type: Object, default: null }
 })
 
 const chartRef = ref(null)
@@ -70,15 +73,17 @@ function initChart() {
   })
 }
 
-// 用 times.length 的变化来触发更新（避免 deep watch 的性能问题）
+// 单系列模式（兼容原有逻辑）
 watch(
   () => props.chartData.times.length,
   function (newLen) {
+    // 如果有多个系列数据，跳过单系列更新
+    if (props.multiChartData && props.multiChartData.series && props.multiChartData.series.length > 0) return
+
     const chart = chartInstance.value
     const data = props.chartData
     if (!chart) return
 
-    // 数据被清空时，重置图表 series（切换模型的中间态）
     if (newLen === 0) {
       chart.setOption({ series: [] }, { notMerge: false, lazyUpdate: true })
       return
@@ -107,6 +112,79 @@ watch(
       legend: { data: data.hasActualData ? ['预测值', '实际值'] : ['预测值'] },
       series: series
     }, { notMerge: false, lazyUpdate: true })
+  }
+)
+
+// 多系列模式
+watch(
+  () => props.multiChartData ? props.multiChartData._len : 0,
+  function (newLen) {
+    if (!props.multiChartData || !props.multiChartData.series || props.multiChartData.series.length === 0) return
+
+    const chart = chartInstance.value
+    const data = props.multiChartData
+    if (!chart) return
+
+    if (newLen === 0) {
+      chart.setOption({ series: [], legend: { data: [] } }, { notMerge: true, lazyUpdate: true })
+      return
+    }
+
+    const legendData = []
+    const series = []
+
+    for (const s of data.series) {
+      // 预测值主线
+      legendData.push(s.name)
+      series.push({
+        name: s.name,
+        type: 'line',
+        data: s.predictions,
+        smooth: 0.3,
+        lineStyle: { color: s.color, width: 2.5 },
+        itemStyle: { color: s.color },
+        showSymbol: false
+      })
+
+      // 置信区间上界
+      series.push({
+        name: s.name + ' 上界',
+        type: 'line',
+        data: s.upper,
+        smooth: 0.3,
+        lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
+        itemStyle: { color: s.color, opacity: 0.3 },
+        showSymbol: false
+      })
+
+      // 置信区间下界
+      series.push({
+        name: s.name + ' 下界',
+        type: 'line',
+        data: s.lower,
+        smooth: 0.3,
+        lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
+        itemStyle: { color: s.color, opacity: 0.3 },
+        showSymbol: false,
+        areaStyle: {
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: s.color + '15' },
+            { offset: 1, color: s.color + '05' }
+          ])
+        }
+      })
+    }
+
+    chart.setOption({
+      xAxis: { data: data.times },
+      legend: {
+        data: legendData,
+        top: 10,
+        right: 20,
+        textStyle: { color: '#888' }
+      },
+      series: series
+    }, { notMerge: true, lazyUpdate: true })
   }
 )
 
