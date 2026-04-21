@@ -286,7 +286,7 @@ const filteredSavedModels = computed(() => {
 })
 
 const availableDevices = computed(() => {
-  return plcDevices.value.filter(d => d.status === 'connected' || d.status === 'simulated')
+  return plcDevices.value
 })
 
 const selectedDeviceName = computed(() => {
