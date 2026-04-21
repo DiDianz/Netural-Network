@@ -121,6 +121,32 @@
       <PredictionChart :chart-data="chartData" />
     </div>
 
+    <!-- 设备点位信息（独立模式，选择设备后显示） -->
+    <div v-if="!isInstanceMode && selectedDeviceId" class="device-points-panel">
+      <div class="panel-title">
+        <el-icon><Monitor /></el-icon>
+        设备点位信息
+        <el-tag size="small" type="info" style="margin-left: 8px">
+          {{ selectedDeviceName }} · {{ displayPoints.length }} 个点位
+        </el-tag>
+      </div>
+      <el-table :data="displayPoints" size="small" stripe style="width: 100%">
+        <el-table-column prop="point_name" label="点位名称" min-width="140" />
+        <el-table-column prop="db_number" label="DB编号" width="90" align="center" />
+        <el-table-column prop="start_address" label="起始地址" width="90" align="center" />
+        <el-table-column prop="data_type" label="数据类型" width="100" align="center" />
+        <el-table-column prop="bit_index" label="位索引" width="80" align="center" />
+        <el-table-column prop="description" label="描述" min-width="150" />
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
+              {{ row.is_active === 1 ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
+
     <!-- PLC 实时数据面板 -->
     <div v-if="plcLiveValues.length > 0" class="plc-live-panel">
       <div class="panel-title">
@@ -200,6 +226,18 @@ const filteredSavedModels = computed(() => {
 
 const availableDevices = computed(() => {
   return plcDevices.value.filter(d => d.status === 'connected' || d.status === 'simulated')
+})
+
+const selectedDeviceName = computed(() => {
+  const device = plcDevices.value.find(d => d.id === selectedDeviceId.value)
+  return device ? device.name : ''
+})
+
+const displayPoints = computed(() => {
+  if (selectedPointIds.value.length === 0) {
+    return devicePoints.value
+  }
+  return devicePoints.value.filter(p => selectedPointIds.value.includes(p.id))
 })
 
 function modelTagType(key) {
@@ -606,5 +644,32 @@ function handleClear() {
   display: grid;
   grid-template-columns: 1fr 380px;
   gap: 16px;
+}
+
+.device-points-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-secondary);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.device-points-panel :deep(.el-table) {
+  --el-table-bg-color: var(--bg-card);
+  --el-table-tr-bg-color: var(--bg-card);
+  --el-table-row-hover-bg-color: var(--bg-secondary);
+  --el-table-header-bg-color: var(--bg-secondary);
+  --el-table-border-color: var(--border-secondary);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+}
+
+.device-points-panel .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  color: var(--text-primary);
 }
 </style>
