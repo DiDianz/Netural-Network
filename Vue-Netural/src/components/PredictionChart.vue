@@ -2,32 +2,11 @@
 <template>
   <div class="chart-wrapper">
     <div ref="chartRef" class="chart-container"></div>
-    <!-- 右上角注释 overlay —— Vue 渲染，不走 ECharts graphic -->
-    <div class="chart-legend-overlay">
-      <!-- 预测值 -->
-      <div v-if="latestPrediction != null" class="legend-item">
-        <span class="legend-dot" style="background: #4a9eff"></span>
-        <span class="legend-label">预测值: {{ Number(latestPrediction).toFixed(4) }}</span>
-      </div>
-      <!-- 实际值 -->
-      <div v-if="latestActual != null" class="legend-item">
-        <span class="legend-dot" style="background: #f97316"></span>
-        <span class="legend-label">实际值: {{ Number(latestActual).toFixed(4) }}</span>
-      </div>
-      <!-- 输入点位 -->
-      <div v-for="(p, i) in inputPoints" :key="p.point_name" class="legend-item">
-        <span class="legend-dot" :style="{ background: POINT_COLORS[i % POINT_COLORS.length] }"></span>
-        <span class="legend-label">
-          {{ p.description || p.point_name }}
-          <template v-if="p.history && p.history.length > 0">: {{ Number(p.history[p.history.length - 1]).toFixed(4) }}</template>
-        </span>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, shallowRef, nextTick, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, shallowRef, nextTick } from 'vue'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import {
@@ -58,16 +37,6 @@ const POINT_COLORS = [
   '#ec4899', '#14b8a6', '#eab308', '#6366f1',
   '#ef4444', '#06b6d4'
 ]
-
-// overlay 用的最新预测值 / 实际值
-const latestPrediction = computed(() => {
-  const preds = props.chartData.predictions
-  return preds.length > 0 ? preds[preds.length - 1] : null
-})
-const latestActual = computed(() => {
-  const actuals = props.chartData.actuals
-  return actuals.length > 0 ? actuals[actuals.length - 1] : null
-})
 
 // 构建完整 ECharts option（每次 setOption 都带全量配置，避免 notMerge 丢失 grid/yAxis 等）
 function buildFullOption(data, inputPts) {
@@ -293,7 +262,6 @@ onUnmounted(function () {
 
 <style scoped>
 .chart-wrapper {
-  position: relative;
   background: var(--bg-card);
   border: 1px solid #1e1e2e;
   border-radius: 12px;
@@ -302,34 +270,5 @@ onUnmounted(function () {
 .chart-container {
   width: 100%;
   height: 420px;
-}
-/* 右上角注释 overlay */
-.chart-legend-overlay {
-  position: absolute;
-  top: 36px;
-  right: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  z-index: 10;
-  pointer-events: none;
-}
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #ccc;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  white-space: nowrap;
-}
-.legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.legend-label {
-  opacity: 0.9;
 }
 </style>
