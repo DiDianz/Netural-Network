@@ -38,8 +38,8 @@ const POINT_COLORS = [
   '#ef4444', '#06b6d4'
 ]
 
-// 构建完整 ECharts option（每次 setOption 都带全量配置，避免 notMerge 丢失 grid/yAxis 等）
-function buildFullOption(data, inputPts) {
+// 构建 series + legend（不包含 dataZoom，用于增量更新）
+function buildSeriesAndLegend(data, inputPts) {
   const legendData = ['预测值']
   const series = [{
     name: '预测值', type: 'line', data: data.predictions,
@@ -50,7 +50,6 @@ function buildFullOption(data, inputPts) {
     z: 10
   }]
 
-  // 每个设备点的趋势线
   inputPts.forEach((p, i) => {
     const color = POINT_COLORS[i % POINT_COLORS.length]
     const label = p.description || p.point_name
@@ -78,80 +77,12 @@ function buildFullOption(data, inputPts) {
     })
   }
 
-  return {
-    title: {
-      text: '神经网络实时预测',
-      left: 20, top: 10,
-      textStyle: { fontSize: 16, fontWeight: 600, color: '#e0e0e0' }
-    },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(15, 15, 20, 0.95)',
-      borderColor: '#333',
-      textStyle: { color: '#e0e0e0' }
-    },
-    legend: {
-      data: legendData, top: 10, right: 20,
-      textStyle: { color: '#888' }
-    },
-    grid: { left: 60, right: 30, top: 60, bottom: 80 },
-    xAxis: {
-      type: 'category', data: data.times,
-      axisLine: { lineStyle: { color: '#333' } },
-      axisLabel: { color: '#666' }
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { show: false },
-      axisLabel: { color: '#666' },
-      splitLine: { lineStyle: { color: '#1a1a2e', type: 'dashed' } }
-    },
-    dataZoom: [
-      { type: 'inside', start: 80, end: 100 },
-      { type: 'slider', start: 80, end: 100, height: 20, bottom: 10 }
-    ],
-    series
-  }
+  return { legendData, series }
 }
 
-function buildMultiOption(data) {
-  const legendData = []
-  const series = []
-
-  for (const s of data.series) {
-    legendData.push(s.name)
-    series.push({
-      name: s.name, type: 'line', data: s.predictions,
-      smooth: 0.3,
-      lineStyle: { color: s.color, width: 2.5 },
-      itemStyle: { color: s.color },
-      showSymbol: false
-    })
-    series.push({
-      name: s.name + ' 上界', type: 'line', data: s.upper,
-      smooth: 0.3,
-      lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
-      itemStyle: { color: s.color, opacity: 0.3 },
-      showSymbol: false
-    })
-    series.push({
-      name: s.name + ' 下界', type: 'line', data: s.lower,
-      smooth: 0.3,
-      lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
-      itemStyle: { color: s.color, opacity: 0.3 },
-      showSymbol: false,
-      areaStyle: {
-        color: {
-          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: s.color + '15' },
-            { offset: 1, color: s.color + '05' }
-          ]
-        }
-      }
-    })
-  }
-
+// 完整 option（含 dataZoom，仅用于初始化）
+function buildFullOption(data, inputPts) {
+  const { legendData, series } = buildSeriesAndLegend(data, inputPts)
   return {
     title: {
       text: '神经网络实时预测',
@@ -164,10 +95,7 @@ function buildMultiOption(data) {
       borderColor: '#333',
       textStyle: { color: '#e0e0e0' }
     },
-    legend: {
-      data: legendData, top: 10, right: 20,
-      textStyle: { color: '#888' }
-    },
+    legend: { data: legendData, top: 10, right: 20, textStyle: { color: '#888' } },
     grid: { left: 60, right: 30, top: 60, bottom: 80 },
     xAxis: {
       type: 'category', data: data.times,
@@ -210,23 +138,29 @@ function initChart() {
 }
 
 // 主更新：预测线 + 点位趋势线
+// 只更新 xAxis/legend/series，不传 dataZoom，保留用户缩放位置
 watch(
   () => [props.chartData._len, props.inputPoints.map(p => (p.history || []).length).join(',')],
   function () {
     const chart = chartInstance.value
     if (!chart) return
-    // 多系列模式跳过
     if (props.multiChartData && props.multiChartData.series && props.multiChartData.series.length > 0) return
 
     nextTick(() => {
       if (!chartInstance.value) return
-      safeSetOption(chart, buildFullOption(props.chartData, props.inputPoints))
+      const data = props.chartData
+      const { legendData, series } = buildSeriesAndLegend(data, props.inputPoints)
+      safeSetOption(chart, {
+        xAxis: { data: data.times },
+        legend: { data: legendData },
+        series
+      })
     })
   },
   { deep: true }
 )
 
-// 多系列模式
+// 多系列模式 —— 同理不传 dataZoom
 watch(
   () => props.multiChartData ? props.multiChartData._len : 0,
   function (newLen) {
@@ -237,10 +171,50 @@ watch(
     nextTick(() => {
       if (!chartInstance.value) return
       if (newLen === 0) {
-        safeSetOption(chart, buildFullOption({ times: [], predictions: [], actuals: [], hasActualData: false }, []))
+        safeSetOption(chart, { series: [], legend: { data: [] } })
         return
       }
-      safeSetOption(chart, buildMultiOption(props.multiChartData))
+      const data = props.multiChartData
+      const legendData = []
+      const series = []
+      for (const s of data.series) {
+        legendData.push(s.name)
+        series.push({
+          name: s.name, type: 'line', data: s.predictions,
+          smooth: 0.3,
+          lineStyle: { color: s.color, width: 2.5 },
+          itemStyle: { color: s.color },
+          showSymbol: false
+        })
+        series.push({
+          name: s.name + ' 上界', type: 'line', data: s.upper,
+          smooth: 0.3,
+          lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
+          itemStyle: { color: s.color, opacity: 0.3 },
+          showSymbol: false
+        })
+        series.push({
+          name: s.name + ' 下界', type: 'line', data: s.lower,
+          smooth: 0.3,
+          lineStyle: { color: s.color, width: 0.8, type: 'dashed', opacity: 0.4 },
+          itemStyle: { color: s.color, opacity: 0.3 },
+          showSymbol: false,
+          areaStyle: {
+            color: {
+              type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: s.color + '15' },
+                { offset: 1, color: s.color + '05' }
+              ]
+            }
+          }
+        })
+      }
+      safeSetOption(chart, {
+        xAxis: { data: data.times },
+        legend: { data: legendData },
+        series
+      })
     })
   }
 )
