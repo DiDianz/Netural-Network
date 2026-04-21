@@ -75,16 +75,15 @@
           @change="handleDeviceSelect"
         >
           <el-option
-            v-for="d in plcDevices"
+            v-for="d in availableDevices"
             :key="d.id"
             :label="d.name"
             :value="d.id"
-            :disabled="d.status !== 'connected' && d.status !== 'simulated'"
           >
             <div class="plc-device-option">
               <span>{{ d.name }}</span>
-              <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small">
-                {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟中' : '未连接' }}
+              <el-tag :type="d.status === 'connected' ? 'success' : 'warning'" size="small">
+                {{ d.status === 'connected' ? '已连接' : '模拟中' }}
               </el-tag>
               <span class="plc-device-meta">{{ d.ip }}:{{ d.port }}</span>
             </div>
@@ -197,6 +196,10 @@ const loadingPoints = ref(false)
 
 const filteredSavedModels = computed(() => {
   return savedModels.value.filter(m => m.model_key === selectedModelKey.value)
+})
+
+const availableDevices = computed(() => {
+  return plcDevices.value.filter(d => d.status === 'connected' || d.status === 'simulated')
 })
 
 function modelTagType(key) {
@@ -322,8 +325,8 @@ async function handleStart() {
   }
 
   const device = plcDevices.value.find(d => d.id === selectedDeviceId.value)
-  if (!device || device.status !== 'connected') {
-    ElMessage.warning('PLC 设备未连接')
+  if (!device || (device.status !== 'connected' && device.status !== 'simulated')) {
+    ElMessage.warning('PLC 设备未连接或未启动模拟')
     return
   }
 
