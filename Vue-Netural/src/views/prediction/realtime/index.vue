@@ -13,6 +13,25 @@
         </el-tag>
         <span class="instance-name">{{ instanceConfig.name }}</span>
         <span class="instance-device">→ {{ instanceConfig.device_name || `设备#${instanceConfig.device_id}` }}</span>
+        <div class="instance-points" v-if="instancePointInfo.length > 0">
+          <el-tag
+            v-for="p in instancePointInfo.slice(0, 5)"
+            :key="p.id"
+            size="small"
+            effect="plain"
+            type="info"
+          >
+            {{ p.point_name }}
+          </el-tag>
+          <el-tag
+            v-if="instancePointInfo.length > 5"
+            size="small"
+            effect="plain"
+            type="warning"
+          >
+            +{{ instancePointInfo.length - 5 }}
+          </el-tag>
+        </div>
       </div>
       <div class="instance-info-right">
         <el-tag :type="connectionState === 'open' ? 'success' : 'info'" size="small" effect="dark">
@@ -121,6 +140,31 @@
       <PredictionChart :chart-data="chartData" :input-points="chartInputPoints" />
     </div>
 
+    <!-- 实例模式：点位信息表 -->
+    <div v-if="isInstanceMode && instancePointInfo.length > 0" class="device-points-panel">
+      <div class="panel-title">
+        <el-icon><Monitor /></el-icon>
+        实例点位信息
+        <el-tag size="small" type="info" style="margin-left: 8px">
+          {{ instanceConfig.name }} · {{ instancePointInfo.length }} 个点位
+        </el-tag>
+      </div>
+      <el-table :data="instancePointInfo" size="small" stripe style="width: 100%">
+        <el-table-column prop="point_name" label="点位名称" min-width="140" />
+        <el-table-column prop="db_number" label="DB编号" width="90" align="center" />
+        <el-table-column prop="start_address" label="起始地址" width="90" align="center" />
+        <el-table-column prop="data_type" label="数据类型" width="100" align="center" />
+        <el-table-column label="实时值" width="120" align="center">
+          <template #default="{ row }">
+            <span class="mono-value" :class="{ 'value-ok': row.current_value != null }">
+              {{ row.current_value != null ? row.current_value : '—' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="120" />
+      </el-table>
+    </div>
+
     <!-- 设备点位信息（独立模式，选择设备后显示） -->
     <div v-if="!isInstanceMode && selectedDeviceId" class="device-points-panel">
       <div class="panel-title">
@@ -220,6 +264,7 @@ let eventSource = null
 const isInstanceMode = computed(() => !!route.params.id)
 const instanceConfig = ref({})
 const plcLiveValues = ref([])
+const instancePointInfo = ref([]) // 实例模式下的点位信息
 
 // ========== 独立模式 ==========
 const selectedModelKey = ref('lstm')
@@ -257,12 +302,27 @@ const displayPoints = computed(() => {
 })
 
 const chartInputPoints = computed(() => {
-  return displayPoints.value.map(p => ({
-    point_name: p.point_name,
-    db_number: p.db_number,
-    start_address: p.start_address,
-    data_type: p.data_type
-  }))
+  // 实例模式：使用实例点位信息 + 实时值
+  if (isInstanceMode.value) {
+    return instancePointInfo.value.map(p => ({
+      point_name: p.point_name,
+      db_number: p.db_number,
+      start_address: p.start_address,
+      data_type: p.data_type,
+      current_value: p.current_value
+    }))
+  }
+  // 独立模式
+  return displayPoints.value.map(p => {
+    const val = actualValues.value[p.id] ?? simulatedValues.value[p.id] ?? null
+    return {
+      point_name: p.point_name,
+      db_number: p.db_number,
+      start_address: p.start_address,
+      data_type: p.data_type,
+      current_value: val
+    }
+  })
 })
 
 function modelTagType(key) {
@@ -289,6 +349,27 @@ async function loadInstanceConfig() {
     const res = await getInstanceDetail(route.params.id)
     instanceConfig.value = res.data || {}
     interval.value = instanceConfig.value.interval || 1.0
+
+    // 加载实例绑定的点位信息
+    const deviceId = instanceConfig.value.device_id
+    if (deviceId) {
+      const params = { device_id: deviceId, is_active: 1 }
+      const pointRes = await getPlcPointList(params)
+      let allPoints = pointRes.data || []
+
+      // 如果实例指定了点位 ID，则过滤
+      if (instanceConfig.value.point_ids) {
+        const pids = instanceConfig.value.point_ids.split(',').map(Number).filter(n => !isNaN(n))
+        if (pids.length > 0) {
+          allPoints = allPoints.filter(p => pids.includes(p.id))
+        }
+      }
+
+      instancePointInfo.value = allPoints.map(p => ({
+        ...p,
+        current_value: null
+      }))
+    }
   } catch (e) {
     ElMessage.error('加载实例配置失败')
     router.push('/prediction/instances')
@@ -481,6 +562,13 @@ function startInstanceStream() {
       store.addDataPoint(data)
       if (data.plc_points) {
         plcLiveValues.value = data.plc_points
+        // 同步更新实例点位的实时值
+        if (isInstanceMode.value && instancePointInfo.value.length > 0) {
+          instancePointInfo.value = instancePointInfo.value.map(p => {
+            const match = data.plc_points.find(lp => lp.point_name === p.point_name || lp.id === p.id)
+            return match ? { ...p, current_value: match.value } : p
+          })
+        }
       }
     } catch (e) { /* ignore */ }
   }
@@ -526,6 +614,12 @@ function startStandaloneStream() {
       store.addDataPoint(data)
       if (data.plc_points) {
         plcLiveValues.value = data.plc_points
+        // 同步更新实际值到 chartInputPoints
+        const map = {}
+        data.plc_points.forEach(item => {
+          if (item.success && item.value != null) map[item.point_id || item.id] = item.value
+        })
+        actualValues.value = { ...actualValues.value, ...map }
       }
     } catch (e) { /* ignore */ }
   }
@@ -570,6 +664,7 @@ function handleClear() {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .instance-name {
@@ -581,6 +676,13 @@ function handleClear() {
 .instance-device {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.instance-points {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 .instance-info-right {

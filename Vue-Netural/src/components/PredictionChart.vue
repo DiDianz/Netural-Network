@@ -39,42 +39,71 @@ function buildInfoGraphic(latestPrediction) {
   if (!points || points.length === 0) return []
 
   const items = []
-  // 标题
+  let topOffset = 12
+
+  // 标题：输入点位
   items.push({
     type: 'text',
-    right: 20, top: 12,
+    right: 20, top: topOffset,
     style: {
-      text: '输入点位',
+      text: '📋 输入点位',
       fill: '#888',
       font: '600 12px sans-serif',
       textAlign: 'right'
     }
   })
+  topOffset += 22
 
-  // 每个点位一行
-  points.forEach((p, i) => {
+  // 每个点位一行：点位名称 + 当前值
+  points.forEach((p) => {
+    const valText = p.current_value != null ? `  →  ${Number(p.current_value).toFixed(4)}` : ''
     items.push({
       type: 'text',
-      right: 20, top: 30 + i * 18,
+      right: 20, top: topOffset,
       style: {
-        text: `${p.point_name}`,
-        fill: '#aaa',
-        font: '12px sans-serif',
+        text: `${p.point_name}${valText}`,
+        fill: p.current_value != null ? '#ccc' : '#777',
+        font: '12px "JetBrains Mono", "Fira Code", monospace',
         textAlign: 'right'
       }
     })
+    topOffset += 20
   })
 
-  // 最新预测值
+  // 分隔线
+  topOffset += 4
+  items.push({
+    type: 'text',
+    right: 20, top: topOffset,
+    style: {
+      text: '─────────────────',
+      fill: '#333',
+      font: '11px monospace',
+      textAlign: 'right'
+    }
+  })
+  topOffset += 18
+
+  // 预测值
   if (latestPrediction != null) {
-    const predTop = 30 + points.length * 18 + 6
     items.push({
       type: 'text',
-      right: 20, top: predTop,
+      right: 20, top: topOffset,
       style: {
-        text: `预测值: ${Number(latestPrediction).toFixed(6)}`,
+        text: `🎯 预测值`,
+        fill: '#888',
+        font: '600 11px sans-serif',
+        textAlign: 'right'
+      }
+    })
+    topOffset += 20
+    items.push({
+      type: 'text',
+      right: 20, top: topOffset,
+      style: {
+        text: `${Number(latestPrediction).toFixed(6)}`,
         fill: '#4a9eff',
-        font: '700 13px "JetBrains Mono", "Fira Code", monospace',
+        font: '700 16px "JetBrains Mono", "Fira Code", monospace',
         textAlign: 'right'
       }
     })

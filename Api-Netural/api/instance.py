@@ -31,6 +31,17 @@ async def list_instances(db: Session = Depends(get_db)):
         device_name = device.name if device else f"设备#{inst.device_id}"
         device_connected = plc_manager.is_connected(inst.device_id) if device else False
 
+        # 获取点位名称列表
+        point_names = []
+        if inst.point_ids:
+            try:
+                pids = [int(x.strip()) for x in inst.point_ids.split(",") if x.strip()]
+                if pids:
+                    pts = db.query(PlcDbPoint).filter(PlcDbPoint.id.in_(pids)).all()
+                    point_names = [p.point_name for p in pts]
+            except (ValueError, AttributeError):
+                pass
+
         data.append({
             "id": inst.id,
             "name": inst.name,
@@ -38,6 +49,7 @@ async def list_instances(db: Session = Depends(get_db)):
             "device_name": device_name,
             "device_connected": device_connected,
             "point_ids": inst.point_ids or "",
+            "point_names": point_names,
             "model_key": inst.model_key,
             "base_model_id": inst.base_model_id or "",
             "interval": (inst.interval or 10) / 10.0,
@@ -54,11 +66,30 @@ async def get_instance(instance_id: int = Query(...), db: Session = Depends(get_
     inst = db.query(PredictionInstance).filter(PredictionInstance.id == instance_id).first()
     if not inst:
         raise HTTPException(404, "实例不存在")
+
+    # 获取点位名称列表
+    point_names = []
+    if inst.point_ids:
+        try:
+            pids = [int(x.strip()) for x in inst.point_ids.split(",") if x.strip()]
+            if pids:
+                pts = db.query(PlcDbPoint).filter(PlcDbPoint.id.in_(pids)).all()
+                point_names = [p.point_name for p in pts]
+        except (ValueError, AttributeError):
+            pass
+
+    # 获取设备名称
+    from models.plc_device import PlcDevice
+    device = db.query(PlcDevice).filter(PlcDevice.id == inst.device_id).first()
+    device_name = device.name if device else f"设备#{inst.device_id}"
+
     return {"code": 200, "data": {
         "id": inst.id,
         "name": inst.name,
         "device_id": inst.device_id,
+        "device_name": device_name,
         "point_ids": inst.point_ids or "",
+        "point_names": point_names,
         "model_key": inst.model_key,
         "base_model_id": inst.base_model_id or "",
         "interval": (inst.interval or 10) / 10.0,

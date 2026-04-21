@@ -50,6 +50,29 @@
             <span class="ic-label">间隔</span>
             <span class="ic-value mono">{{ inst.interval }}s</span>
           </div>
+          <div class="ic-info-row ic-points-row">
+            <span class="ic-label">点位</span>
+            <div class="ic-points" v-if="inst.point_names && inst.point_names.length > 0">
+              <el-tag
+                v-for="(name, idx) in inst.point_names.slice(0, 4)"
+                :key="idx"
+                size="small"
+                effect="plain"
+                type="info"
+              >
+                {{ name }}
+              </el-tag>
+              <el-tag
+                v-if="inst.point_names.length > 4"
+                size="small"
+                effect="plain"
+                type="warning"
+              >
+                +{{ inst.point_names.length - 4 }}
+              </el-tag>
+            </div>
+            <span v-else class="ic-value" style="color: var(--text-muted)">全部启用点位</span>
+          </div>
           <div class="ic-info-row">
             <span class="ic-label">创建时间</span>
             <span class="ic-value">{{ inst.create_time }}</span>
@@ -484,6 +507,16 @@ function goToInstance(inst) {
 
 .ic-value.mono {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.ic-points-row {
+  align-items: flex-start;
+}
+
+.ic-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .ic-footer {
