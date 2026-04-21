@@ -135,8 +135,21 @@
         <el-table-column prop="db_number" label="DB编号" width="90" align="center" />
         <el-table-column prop="start_address" label="起始地址" width="90" align="center" />
         <el-table-column prop="data_type" label="数据类型" width="100" align="center" />
-        <el-table-column prop="bit_index" label="位索引" width="80" align="center" />
-        <el-table-column prop="description" label="描述" min-width="150" />
+        <el-table-column label="实际值" width="100" align="center">
+          <template #default="{ row }">
+            <span class="mono-value" :class="{ 'value-ok': actualValues[row.id] != null }">
+              {{ actualValues[row.id] != null ? actualValues[row.id] : '—' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="模拟值" width="100" align="center">
+          <template #default="{ row }">
+            <span class="mono-value" :class="{ 'value-ok': simulatedValues[row.id] != null }">
+              {{ simulatedValues[row.id] != null ? simulatedValues[row.id] : '—' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="120" />
         <el-table-column label="状态" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
@@ -192,7 +205,7 @@ import RealtimePanel from '../../../components/RealtimePanel.vue'
 import ControlPanel from '../../../components/ControlPanel.vue'
 import { usePredictionStore } from '../../../composables/usePredictionStore'
 import { getSavedModels, loadSavedModel, switchModel } from '../../../api/model'
-import { getPlcDeviceList, getPlcPointList } from '../../../api/plc'
+import { getPlcDeviceList, getPlcPointList, readPlcBatch } from '../../../api/plc'
 import { getInstanceDetail } from '../../../api/instance'
 
 const route = useRoute()
@@ -219,6 +232,9 @@ const loadingPlcDevices = ref(false)
 const devicePoints = ref([])
 const selectedPointIds = ref([])
 const loadingPoints = ref(false)
+const actualValues = ref({})
+const simulatedValues = ref({})
+let valuesTimer = null
 
 const filteredSavedModels = computed(() => {
   return savedModels.value.filter(m => m.model_key === selectedModelKey.value)
@@ -255,6 +271,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopStream()
+  clearInterval(valuesTimer)
 })
 
 // ========== 实例模式：加载配置 ==========
@@ -319,11 +336,15 @@ async function loadPlcDevices() {
 }
 
 function handleDeviceSelect() {
-  // 重置点位选择
+  // 重置点位选择和值
   selectedPointIds.value = []
   devicePoints.value = []
+  actualValues.value = {}
+  simulatedValues.value = {}
   // 加载该设备的点位
   loadDevicePoints(selectedDeviceId.value)
+  // 启动定时刷新
+  startValuesTimer()
   // 设备变更后，如果正在运行，重启
   if (connectionState.value === 'open') {
     stopStream()
@@ -339,6 +360,48 @@ async function loadDevicePoints(deviceId) {
     devicePoints.value = res.data || []
   } catch (e) { /* ignore */ }
   finally { loadingPoints.value = false }
+}
+
+// 定时刷新点位的实际值和模拟值
+async function loadPointValues() {
+  const deviceId = selectedDeviceId.value
+  if (!deviceId) return
+  const pointIds = selectedPointIds.value.length > 0
+    ? selectedPointIds.value.join(',')
+    : ''
+
+  // 读实际值（真实PLC连接）
+  const device = plcDevices.value.find(d => d.id === deviceId)
+  if (device && device.status === 'connected') {
+    try {
+      const res = await readPlcBatch(deviceId, pointIds)
+      const data = res.data || []
+      const map = {}
+      data.forEach(item => { if (item.success && item.value != null) map[item.point_id] = item.value })
+      actualValues.value = map
+    } catch (e) { /* ignore */ }
+  } else {
+    actualValues.value = {}
+  }
+
+  // 读模拟值（模拟PLC）
+  if (device && device.status === 'simulated') {
+    try {
+      const res = await readPlcBatch(deviceId, pointIds)
+      const data = res.data || []
+      const map = {}
+      data.forEach(item => { if (item.success && item.value != null) map[item.point_id] = item.value })
+      simulatedValues.value = map
+    } catch (e) { /* ignore */ }
+  } else {
+    simulatedValues.value = {}
+  }
+}
+
+function startValuesTimer() {
+  clearInterval(valuesTimer)
+  loadPointValues()
+  valuesTimer = setInterval(loadPointValues, 2000)
 }
 
 // ========== 预测流控制 ==========
@@ -671,5 +734,16 @@ function handleClear() {
   font-weight: 600;
   margin-bottom: 14px;
   color: var(--text-primary);
+}
+
+.mono-value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mono-value.value-ok {
+  color: var(--success);
+  font-weight: 600;
 }
 </style>
