@@ -36,6 +36,155 @@ async def predict_stream(
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
 
 
+# ========== 独立模式：PLC + 点位 → 模型推理 ==========
+from core.plc_simulator import plc_simulator
+from models.plc_db_point import PlcDbPoint
+
+
+@router.get("/plc-stream")
+async def plc_predict_stream(
+    device_id: int = Query(..., description="PLC 设备 ID"),
+    model_key: str = Query(..., description="模型标识: lstm / gru / transformer"),
+    point_ids: str = Query("", description="逗号分隔的点位 ID，不传则读取所有启用点位"),
+    interval: float = Query(1.0, ge=0.1, le=30.0),
+    use_saved_model: str = Query("", description="已保存模型版本 ID"),
+    db: Session = Depends(get_db)
+):
+    """
+    独立模式 SSE 预测流 — 指定 PLC 设备 + 数据点位 → 模型推理
+    """
+    from models.plc_device import PlcDevice
+
+    # 校验设备
+    device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
+    if not device:
+        raise HTTPException(404, "PLC 设备不存在")
+
+    is_simulated = plc_simulator.is_simulating(device_id)
+    is_real_connected = plc_manager.is_connected(device_id)
+    if not is_simulated and not is_real_connected:
+        raise HTTPException(400, "PLC 设备未连接或未启动模拟")
+
+    # 校验模型
+    if model_key not in model_manager.models:
+        raise HTTPException(400, f"模型不存在: {model_key}")
+
+    # 如果指定了已保存模型，加载权重
+    if use_saved_model and use_saved_model in model_manager.saved_models:
+        model_manager.load_model_weights(model_key, use_saved_model)
+        print(f"独立预测: 已加载模型权重 {use_saved_model}")
+
+    # 获取点位
+    query = db.query(PlcDbPoint).filter(
+        PlcDbPoint.device_id == device_id,
+        PlcDbPoint.is_active == 1
+    )
+    if point_ids:
+        pids = [int(x.strip()) for x in point_ids.split(",") if x.strip()]
+        query = query.filter(PlcDbPoint.id.in_(pids))
+    points = query.all()
+    if not points:
+        raise HTTPException(400, "没有可用的启用点位")
+
+    point_list = [{
+        "id": p.id, "point_name": p.point_name,
+        "db_number": p.db_number, "start_address": p.start_address,
+        "data_type": p.data_type, "bit_index": p.bit_index
+    } for p in points]
+
+    model = model_manager.models[model_key]["model"]
+    model.eval()
+    input_dim = model_manager.input_dim
+    window_size = model_manager.window_size
+
+    # buffer
+    buffer = []
+    for _ in range(window_size):
+        buffer.append(list(np.random.randn(input_dim).astype(float)))
+
+    async def event_generator():
+        import torch
+        tick = 0
+        try:
+            while True:
+                tick += 1
+                timestamp = time.time()
+
+                # 1. 读取 PLC 数据（模拟 or 真实）
+                if is_simulated:
+                    plc_result = plc_simulator.read_multiple(device_id, point_list)
+                else:
+                    plc_result = plc_manager.read_multiple(device_id, point_list)
+
+                if not plc_result["success"]:
+                    yield f"data: {json.dumps({'error': plc_result['msg'], 'tick': tick}, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(interval)
+                    continue
+
+                # 2. 转为特征向量
+                values = []
+                for item in plc_result["data"]:
+                    if item["success"] and item["value"] is not None:
+                        values.append(float(item["value"]))
+                    else:
+                        values.append(0.0)
+
+                padded = values[:input_dim]
+                while len(padded) < input_dim:
+                    padded.append(0.0)
+                buffer.append(padded)
+                while len(buffer) > window_size:
+                    buffer.pop(0)
+
+                # 3. 推理
+                try:
+                    input_seq = np.array(buffer, dtype=np.float32)
+                    input_tensor = torch.tensor(input_seq).unsqueeze(0).to(model_manager.device)
+
+                    with torch.no_grad():
+                        pred = model(input_tensor).cpu().numpy()[0]
+
+                    # MC Dropout
+                    model.train()
+                    mc_preds = []
+                    for _ in range(10):
+                        with torch.no_grad():
+                            p = model(input_tensor).cpu().numpy()[0]
+                        mc_preds.append(float(p))
+                    model.eval()
+
+                    mean_pred = float(np.mean(mc_preds))
+                    std_pred = float(np.std(mc_preds))
+
+                    payload = {
+                        "timestamp": timestamp,
+                        "tick": tick,
+                        "model_key": model_key,
+                        "model_name": model_manager.models[model_key]["display_name"],
+                        "prediction": round(mean_pred, 6),
+                        "confidence_upper": round(mean_pred + 2 * std_pred, 6),
+                        "confidence_lower": round(mean_pred - 2 * std_pred, 6),
+                        "uncertainty": round(std_pred, 6),
+                        "simulated": is_simulated,
+                        "plc_points": plc_result["data"]
+                    }
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                except Exception as e:
+                    yield f"data: {json.dumps({'error': str(e), 'tick': tick}, ensure_ascii=False)}\n\n"
+
+                await asyncio.sleep(interval)
+
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+    )
+
+
 @router.post("/save")
 async def save_prediction(model_key: str = Query(...), db: Session = Depends(get_db)):
     result = model_manager.predict_once(model_key)

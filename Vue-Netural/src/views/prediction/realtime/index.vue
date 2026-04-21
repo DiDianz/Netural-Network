@@ -79,12 +79,12 @@
             :key="d.id"
             :label="d.name"
             :value="d.id"
-            :disabled="d.status !== 'connected'"
+            :disabled="d.status !== 'connected' && d.status !== 'simulated'"
           >
             <div class="plc-device-option">
               <span>{{ d.name }}</span>
-              <el-tag :type="d.status === 'connected' ? 'success' : 'info'" size="small">
-                {{ d.status === 'connected' ? '已连接' : '未连接' }}
+              <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small">
+                {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟中' : '未连接' }}
               </el-tag>
               <span class="plc-device-meta">{{ d.ip }}:{{ d.port }}</span>
             </div>
@@ -93,6 +93,29 @@
         <el-button size="default" :icon="Refresh" circle style="margin-left: 8px" @click="loadPlcDevices" :loading="loadingPlcDevices" />
       </div>
     </template>
+
+    <!-- 点位选择（独立模式，选择设备后显示） -->
+    <div v-if="!isInstanceMode && selectedDeviceId" class="point-selector">
+      <span class="selector-label">数据点位:</span>
+      <el-select
+        v-model="selectedPointIds"
+        multiple
+        placeholder="不选则读取所有启用点位"
+        size="default"
+        style="width: 100%"
+        collapse-tags
+        collapse-tags-tooltip
+        filterable
+        :loading="loadingPoints"
+      >
+        <el-option
+          v-for="p in devicePoints"
+          :key="p.id"
+          :label="`${p.point_name} (DB${p.db_number}.${p.start_address})`"
+          :value="p.id"
+        />
+      </el-select>
+    </div>
 
     <!-- 图表 -->
     <div class="chart-section">
@@ -144,7 +167,7 @@ import RealtimePanel from '../../../components/RealtimePanel.vue'
 import ControlPanel from '../../../components/ControlPanel.vue'
 import { usePredictionStore } from '../../../composables/usePredictionStore'
 import { getSavedModels, loadSavedModel, switchModel } from '../../../api/model'
-import { getPlcDeviceList } from '../../../api/plc'
+import { getPlcDeviceList, getPlcPointList } from '../../../api/plc'
 import { getInstanceDetail } from '../../../api/instance'
 
 const route = useRoute()
@@ -168,6 +191,9 @@ const savedModels = ref([])
 const loadingSavedModels = ref(false)
 const plcDevices = ref([])
 const loadingPlcDevices = ref(false)
+const devicePoints = ref([])
+const selectedPointIds = ref([])
+const loadingPoints = ref(false)
 
 const filteredSavedModels = computed(() => {
   return savedModels.value.filter(m => m.model_key === selectedModelKey.value)
@@ -252,11 +278,26 @@ async function loadPlcDevices() {
 }
 
 function handleDeviceSelect() {
+  // 重置点位选择
+  selectedPointIds.value = []
+  devicePoints.value = []
+  // 加载该设备的点位
+  loadDevicePoints(selectedDeviceId.value)
   // 设备变更后，如果正在运行，重启
   if (connectionState.value === 'open') {
     stopStream()
     setTimeout(() => handleStart(), 500)
   }
+}
+
+async function loadDevicePoints(deviceId) {
+  if (!deviceId) return
+  loadingPoints.value = true
+  try {
+    const res = await getPlcPointList({ device_id: deviceId, is_active: 1 })
+    devicePoints.value = res.data || []
+  } catch (e) { /* ignore */ }
+  finally { loadingPoints.value = false }
 }
 
 // ========== 预测流控制 ==========
@@ -345,8 +386,19 @@ function startStandaloneStream() {
   plcLiveValues.value = []
   connectionState.value = 'connecting'
 
-  const token = localStorage.getItem('token') || ''
-  const url = `http://localhost:8000/predict/stream?interval=${interval.value}&model_key=${selectedModelKey.value}`
+  const pointIds = selectedPointIds.value.length > 0
+    ? selectedPointIds.value.join(',')
+    : ''
+
+  const savedModelParam = selectedSavedModelId.value || ''
+  const query = new URLSearchParams()
+  query.set('device_id', selectedDeviceId.value)
+  query.set('model_key', selectedModelKey.value)
+  if (pointIds) query.set('point_ids', pointIds)
+  query.set('interval', interval.value)
+  if (savedModelParam) query.set('use_saved_model', savedModelParam)
+
+  const url = `http://localhost:8000/predict/plc-stream?${query.toString()}`
   const es = new EventSource(url)
 
   es.onopen = () => { connectionState.value = 'open' }
@@ -354,7 +406,14 @@ function startStandaloneStream() {
   es.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data)
+      if (data.error) {
+        ElMessage.error(`预测错误: ${data.error}`)
+        return
+      }
       store.addDataPoint(data)
+      if (data.plc_points) {
+        plcLiveValues.value = data.plc_points
+      }
     } catch (e) { /* ignore */ }
   }
 
@@ -427,6 +486,21 @@ function handleClear() {
   border: 1px solid var(--border-secondary);
   border-radius: 12px;
   flex-wrap: wrap;
+}
+
+.point-selector {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-secondary);
+  border-radius: 12px;
+}
+
+.point-selector .selector-label {
+  margin-top: 10px;
+  white-space: nowrap;
 }
 
 .selector-label {
