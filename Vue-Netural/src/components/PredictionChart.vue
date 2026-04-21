@@ -189,12 +189,12 @@ function buildMultiOption(data) {
 }
 
 // 安全调用 setOption
+// 用 notMerge: false 保留用户 dataZoom 拖动位置，不每次重置缩放范围
 function safeSetOption(chart, option) {
   if (!chart) return
   try {
-    chart.setOption(option, { notMerge: true, lazyUpdate: true })
+    chart.setOption(option, { notMerge: false, lazyUpdate: true })
   } catch (e) {
-    // 忽略 "during main process" 等时序错误
     console.warn('[PredictionChart] setOption warning:', e.message)
   }
 }
@@ -202,8 +202,11 @@ function safeSetOption(chart, option) {
 function initChart() {
   if (!chartRef.value) return
   chartInstance.value = echarts.init(chartRef.value)
-  // 初始空状态
-  safeSetOption(chartInstance.value, buildFullOption({ times: [], predictions: [], actuals: [], hasActualData: false }, []))
+  // 初始渲染用 notMerge: true 确保干净状态
+  chartInstance.value.setOption(
+    buildFullOption({ times: [], predictions: [], actuals: [], hasActualData: false }, []),
+    { notMerge: true, lazyUpdate: true }
+  )
 }
 
 // 主更新：预测线 + 点位趋势线
