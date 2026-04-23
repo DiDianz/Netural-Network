@@ -1,14 +1,16 @@
 # core/data_manager.py
+"""管理用户上传的训练数据，支持动态特征列（基于 schema）"""
 from typing import Dict, List, Optional
 import logging
 
 logger = logging.getLogger("data_manager")
 
-INPUT_DIM = 11
+# 默认维度（仅在无 schema 时兜底）
+DEFAULT_INPUT_DIM = 11
 
 
 class UploadedDataManager:
-    """管理用户上传的训练数据，支持按 brandID 分组"""
+    """管理用户上传的训练数据，支持按 brandID 分组 + 动态特征列"""
 
     def __init__(self):
         self.files: Dict[str, dict] = {}
@@ -33,16 +35,33 @@ class UploadedDataManager:
                 "num_rows": meta.get("num_rows", 0),
                 "num_cols": meta.get("num_cols", 0),
                 "brand_count": meta.get("brand_count", 0),
-                "brands": meta.get("brands", [])
+                "brands": meta.get("brands", []),
+                "schema_id": meta.get("schema_id", "default"),
+                "feature_names": meta.get("feature_names", []),
             })
         return result
 
     def has_data(self) -> bool:
         return len(self.files) > 0
 
+    def get_input_dim(self, file_id: str) -> int:
+        """获取文件对应的特征维度"""
+        f = self.files.get(file_id)
+        if not f:
+            return DEFAULT_INPUT_DIM
+        meta = f["metadata"]
+        # 优先从 schema 信息获取
+        if "input_dim" in meta:
+            return meta["input_dim"]
+        if "feature_names" in meta:
+            return len(meta["feature_names"])
+        # 从数据推断：总列数 - 2 (target + brand)
+        ncols = meta.get("num_cols", 0)
+        return ncols - 2 if ncols > 2 else DEFAULT_INPUT_DIM
+
     def get_combined_data(self, file_ids: Optional[List[str]] = None) -> List[list]:
         """
-        合并多个文件的数据，返回 [特征11列, out_moist]（12列，不含brandID）
+        合并多个文件的数据，返回 [特征列..., out_moist]（不含 brandID）
         供训练函数使用
         """
         all_data = []
@@ -53,10 +72,11 @@ class UploadedDataManager:
                 logger.warning(f"文件不存在: {fid}")
                 continue
             rows = f["data"]
+            input_dim = self.get_input_dim(fid)
             for row in rows:
-                if len(row) >= INPUT_DIM + 1:
-                    # 取前12列：特征11 + out_moist，丢弃 brandID
-                    all_data.append(row[:INPUT_DIM + 1])
+                if len(row) >= input_dim + 1:
+                    # 取前 input_dim+1 列：特征 + out_moist，丢弃 brandID
+                    all_data.append(row[:input_dim + 1])
         logger.info(f"get_combined_data: file_ids={targets}, 返回 {len(all_data)} 行")
         return all_data
 
@@ -80,7 +100,7 @@ class UploadedDataManager:
         start = max(0, self.data_index - window_size + 1)
         window = data[start:self.data_index + 1]
         while len(window) < window_size:
-            window.insert(0, data[0] if data else [0.0] * (INPUT_DIM + 1))
+            window.insert(0, data[0] if data else [0.0] * len(data[0]))
         self.data_index += 1
         return window
 
