@@ -29,14 +29,32 @@ export const usePermissionStore = defineStore('permission', {
 
 function mergeDefaultMenus(apiMenus) {
   const defaults = getDefaultMenus()
-  const apiPaths = new Set(apiMenus.map(m => m.path))
+  const apiPathMap = new Map(apiMenus.map(m => [m.path, m]))
 
+  const result = []
+
+  // 先加所有 API 菜单
+  for (const am of apiMenus) {
+    result.push(am)
+  }
+
+  // 合并默认菜单：父级已存在则合并子菜单，否则整体加入
   for (const dm of defaults) {
-    if (!apiPaths.has(dm.path)) {
-      apiMenus.push(dm)
+    const existing = apiPathMap.get(dm.path)
+    if (existing) {
+      // 父级已存在，合并缺失的子菜单
+      const childPaths = new Set((existing.children || []).map(c => c.path))
+      for (const dc of (dm.children || [])) {
+        if (!childPaths.has(dc.path)) {
+          existing.children.push(dc)
+        }
+      }
+    } else {
+      result.push(dm)
     }
   }
-  return apiMenus
+
+  return result
 }
 
 function getDefaultMenus() {
@@ -64,7 +82,8 @@ function getDefaultMenus() {
         { name: 'PredictionModels', path: 'models', meta: { title: '模型管理', icon: 'code' } },
         { name: 'PredictionSavedModels', path: 'saved-models', meta: { title: '已保存模型', icon: 'folder' } },
         { name: 'PredictionInstances', path: 'instances', meta: { title: '预测实例管理', icon: 'list' } },
-        { name: 'PredictionTraining', path: 'training', meta: { title: '模型训练', icon: 'cpu' } }
+        { name: 'PredictionTraining', path: 'training', meta: { title: '模型训练', icon: 'cpu' } },
+        { name: 'PredictionDryer', path: 'dryer', meta: { title: '烘丝机出口水分模型', icon: 'trend-charts' } }
       ]
     },
     {
