@@ -47,6 +47,9 @@ async def list_instances(db: Session = Depends(get_db)):
         else:
             plc_status = "disconnected"
 
+        print(f"[Instance] id={inst.id}, name={inst.name}, device_id={inst.device_id}, "
+              f"is_simulating={is_simulating}, is_connected={is_connected}, plc_status={plc_status}")
+
         # 获取点位名称列表
         point_names = []
         if inst.point_ids:
