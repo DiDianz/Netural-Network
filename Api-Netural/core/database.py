@@ -76,9 +76,9 @@ def _migrate_menu_as_instance_type(db):
 
 
 def _migrate_plc_port(db):
-    """将已有 PLC 设备的 port=102 改为 port=0（使用默认端口）"""
+    """将已有 PLC 设备的 port=102 改为 port=NULL（无端口）"""
     try:
-        db.execute(text("UPDATE plc_device SET port = 0 WHERE port = 102"))
+        db.execute(text("UPDATE plc_device SET port = NULL WHERE port = 102"))
         db.commit()
     except Exception as e:
         db.rollback()

@@ -27,7 +27,7 @@
           </el-tag>
         </div>
         <div class="card-body">
-          <div class="info-row"><span class="label">IP 地址</span><span class="value mono">{{ device.ip }}<template v-if="device.port">:{{ device.port }}</template></span></div>
+          <div class="info-row"><span class="label">IP 地址</span><span class="value mono">{{ device.ip }}<template v-if="device.port">:{{ device.port }}</template><template v-else> <el-tag size="small" type="info" effect="plain">无端口</el-tag></template></span></div>
           <div class="info-row"><span class="label">机架 / 插槽</span><span class="value">{{ device.rack }} / {{ device.slot }}</span></div>
           <div class="info-row"><span class="label">DB 点位</span><span class="value"><el-tag type="info" size="small">{{ device.point_count }} 个</el-tag></span></div>
           <div class="info-row" v-if="device.remark"><span class="label">备注</span><span class="value remark">{{ device.remark }}</span></div>
@@ -53,9 +53,11 @@
       <el-form :model="form" label-width="100px" :rules="rules" ref="formRef">
         <el-form-item label="设备名称" prop="name"><el-input v-model="form.name" placeholder="如：1号产线PLC" /></el-form-item>
         <el-form-item label="IP 地址" prop="ip"><el-input v-model="form.ip" placeholder="如：192.168.1.10" /></el-form-item>
-        <el-form-item label="端口号">
-          <el-input-number v-model="form.port" :min="0" :max="65535" style="width: 100%" />
-          <div class="form-hint-text">0 = 使用默认端口（不显示端口信息）</div>
+        <el-form-item label="是否存在端口">
+          <el-switch v-model="form.has_port" active-text="有端口" inactive-text="无端口" />
+        </el-form-item>
+        <el-form-item v-if="form.has_port" label="端口号" prop="port">
+          <el-input-number v-model="form.port" :min="1" :max="65535" style="width: 100%" placeholder="如：102、502" />
         </el-form-item>
         <el-form-item label="机架号" prop="rack"><el-input-number v-model="form.rack" :min="0" :max="7" style="width: 100%" /></el-form-item>
         <el-form-item label="插槽号" prop="slot"><el-input-number v-model="form.slot" :min="0" :max="31" style="width: 100%" /></el-form-item>
@@ -122,7 +124,7 @@ const simulateDialogVisible = ref(false)
 const simulateTargetDevice = ref(null)
 const simulateForm = ref({ interval: 1.0, min_val: 0, max_val: 100, pattern: 'random' })
 
-const form = ref({ id: null, name: '', ip: '', port: 0, rack: 0, slot: 1, remark: '' })
+const form = ref({ id: null, name: '', ip: '', has_port: false, port: 102, rack: 0, slot: 1, remark: '' })
 
 const rules = {
   name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
@@ -145,19 +147,30 @@ function statusText(status) {
 
 function handleAdd() {
   isEdit.value = false
-  form.value = { id: null, name: '', ip: '', port: 0, rack: 0, slot: 1, remark: '' }
+  form.value = { id: null, name: '', ip: '', has_port: false, port: 102, rack: 0, slot: 1, remark: '' }
   dialogVisible.value = true
 }
 function handleEdit(device) {
-  isEdit.value = true; form.value = { ...device }; dialogVisible.value = true
+  isEdit.value = true
+  const hasPort = !!(device.port && device.port > 0)
+  form.value = { ...device, has_port: hasPort, port: hasPort ? device.port : 102 }
+  dialogVisible.value = true
 }
 
 async function handleSubmit() {
   try { await formRef.value.validate() } catch { return }
   submitting.value = true
   try {
-    if (isEdit.value) { await updatePlcDevice(form.value); ElMessage.success('更新成功') }
-    else { await addPlcDevice(form.value); ElMessage.success('添加成功') }
+    const data = { ...form.value }
+    // 有端口才传端口号，否则传 null
+    data.port = data.has_port ? data.port : null
+    delete data.has_port
+    delete data.status
+    delete data.point_count
+    delete data.create_time
+    delete data.update_time
+    if (isEdit.value) { await updatePlcDevice(data); ElMessage.success('更新成功') }
+    else { await addPlcDevice(data); ElMessage.success('添加成功') }
     dialogVisible.value = false; await loadDevices()
   } catch (e) { if (e?.message) ElMessage.error(e.message) }
   finally { submitting.value = false }
@@ -233,5 +246,4 @@ function handleManagePoints(device) {
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid #1e1e2e; padding-top: 14px; }
 .empty-state { grid-column: 1 / -1; display: flex; justify-content: center; padding: 60px 0; }
 .form-hint { margin-left: 8px; font-size: 12px; color: #999; }
-.form-hint-text { font-size: 12px; color: #888; margin-top: 4px; }
 </style>

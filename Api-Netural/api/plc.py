@@ -48,7 +48,7 @@ async def list_devices(db: Session = Depends(get_db)):
         ).scalar() or 0
         data.append({
             "id": d.id, "name": d.name, "ip": d.ip,
-            "port": d.port if d.port and d.port > 0 else None,
+            "port": d.port if d.port else None,
             "rack": d.rack, "slot": d.slot, "status": d.status,
             "remark": d.remark, "point_count": point_count,
             "create_time": d.create_time.strftime("%Y-%m-%d %H:%M:%S") if d.create_time else None,  # type: ignore
@@ -65,7 +65,7 @@ async def get_device(device_id: int = Query(...), db: Session = Depends(get_db))
         raise HTTPException(400, "设备不存在")
     return {"code": 200, "data": {
         "id": device.id, "name": device.name, "ip": device.ip,
-        "port": device.port if device.port and device.port > 0 else None,
+        "port": device.port if device.port else None,
         "rack": device.rack, "slot": device.slot,
         "status": device.status, "remark": device.remark,
     }}
@@ -75,7 +75,7 @@ async def get_device(device_id: int = Query(...), db: Session = Depends(get_db))
 async def add_device(
     name: str = Query(..., min_length=1, max_length=100),
     ip: str = Query(..., min_length=7, max_length=50),
-    port: int = Query(0, description="端口号，0=使用默认端口"),
+    port: int = Query(None, description="端口号，不传或null=无端口"),
     rack: int = Query(0, ge=0),
     slot: int = Query(1, ge=0),
     remark: str = Query(""),
@@ -94,7 +94,7 @@ async def update_device(
     id: int = Query(...),
     name: str = Query(None),
     ip: str = Query(None),
-    port: int = Query(None, description="端口号，0=使用默认端口"),
+    port: int = Query(None, description="端口号，null=无端口"),
     rack: int = Query(None, ge=0),
     slot: int = Query(None, ge=0),
     remark: str = Query(None),
@@ -150,7 +150,7 @@ async def connect_device(device_id: int = Query(...), db: Session = Depends(get_
     # 先停止模拟（如有）
     plc_simulator.stop_simulate(device_id)
 
-    result = plc_manager.connect(device_id, device.ip, device.port or 0, device.rack, device.slot)  # type: ignore
+    result = plc_manager.connect(device_id, device.ip, device.port, device.rack, device.slot)  # type: ignore
     if result["success"]:
         device.status = "connected"  # type: ignore
         db.commit()
@@ -182,7 +182,7 @@ async def connect_all_devices(db: Session = Depends(get_db)):
         if plc_simulator.is_simulating(d.id):  # type: ignore
             results.append({"id": d.id, "name": d.name, "success": False, "msg": "设备正在模拟中"})
             continue
-        r = plc_manager.connect(d.id, d.ip, d.port or 0, d.rack, d.slot)  # type: ignore
+        r = plc_manager.connect(d.id, d.ip, d.port, d.rack, d.slot)  # type: ignore
         d.status = "connected" if r["success"] else "error"  # type: ignore
         results.append({"id": d.id, "name": d.name, "success": r["success"], "msg": r["msg"]})
     db.commit()
