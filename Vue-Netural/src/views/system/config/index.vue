@@ -6,20 +6,20 @@
       <p>管理系统全局配置参数</p>
     </div>
 
-    <div class="config-list" v-loading="loading">
-      <!-- 实例类型配置（特殊区块） -->
-      <div class="config-item instance-type-section">
-        <div class="config-info">
-          <div class="config-name">预测实例类型</div>
-          <div class="config-key">prediction_instance_types</div>
-          <div class="config-remark">从菜单中选取可用作预测实例类型的菜单项。在「菜单管理」中可设置菜单是否可用作实例类型。</div>
-          <div class="config-remark" style="margin-top: 4px">
+    <div class="config-collapse" v-loading="loading">
+      <!-- 实例类型配置 -->
+      <div class="collapse-item" :class="{ open: expandedKeys.includes('instance_types') }">
+        <div class="collapse-header" @click="toggle('instance_types')">
+          <div class="ch-left">
+            <el-icon class="ch-arrow"><ArrowRight /></el-icon>
+            <span class="ch-title">预测实例类型</span>
             <el-tag size="small" type="success" effect="plain">
               已启用 {{ allMenus.filter(m => m.as_instance_type === 'Y').length }} 项
             </el-tag>
           </div>
+          <span class="ch-hint">从菜单中选取可用作预测实例类型的菜单项</span>
         </div>
-        <div class="config-value">
+        <div class="collapse-body" v-show="expandedKeys.includes('instance_types')">
           <div class="instance-type-list">
             <div
               v-for="m in allMenus"
@@ -47,28 +47,45 @@
       </div>
 
       <!-- 其他配置项 -->
-      <div v-for="item in otherConfigs" :key="item.config_id" class="config-item">
-        <div class="config-info">
-          <div class="config-name">{{ item.config_name }}</div>
-          <div class="config-key">{{ item.config_key }}</div>
-          <div class="config-remark" v-if="item.remark">{{ item.remark }}</div>
+      <div
+        v-for="item in otherConfigs"
+        :key="item.config_id"
+        class="collapse-item"
+        :class="{ open: expandedKeys.includes(item.config_key) }"
+      >
+        <div class="collapse-header" @click="toggle(item.config_key)">
+          <div class="ch-left">
+            <el-icon class="ch-arrow"><ArrowRight /></el-icon>
+            <span class="ch-title">{{ item.config_name }}</span>
+            <!-- 布尔型显示当前状态 -->
+            <el-tag
+              v-if="isBoolKey(item.config_key)"
+              size="small"
+              :type="item.config_value === 'true' ? 'success' : 'info'"
+              effect="plain"
+            >
+              {{ item.config_value === 'true' ? '已启用' : '已禁用' }}
+            </el-tag>
+          </div>
+          <span class="ch-hint">{{ item.remark || item.config_key }}</span>
         </div>
-        <div class="config-value">
+        <div class="collapse-body" v-show="expandedKeys.includes(item.config_key)">
           <!-- 布尔型开关 -->
-          <el-switch
-            v-if="isBoolKey(item.config_key)"
-            :model-value="item.config_value === 'true'"
-            @change="val => handleToggle(item, val)"
-            :loading="updating === item.config_id"
-            active-text="启用"
-            inactive-text="禁用"
-          />
+          <div v-if="isBoolKey(item.config_key)" class="collapse-value">
+            <el-switch
+              :model-value="item.config_value === 'true'"
+              @change="val => handleToggle(item, val)"
+              :loading="updating === item.config_id"
+              active-text="启用"
+              inactive-text="禁用"
+            />
+          </div>
           <!-- 文本型 -->
-          <div v-else class="text-value-row">
+          <div v-else class="collapse-value text-value-row">
             <el-input
               v-model="editValues[item.config_id]"
               :placeholder="item.config_value"
-              style="width: 300px"
+              style="width: 360px"
               size="default"
             />
             <el-button
@@ -91,6 +108,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ArrowRight } from '@element-plus/icons-vue'
 import request from '../../../api/request'
 
 const configs = ref([])
@@ -98,11 +116,22 @@ const loading = ref(false)
 const updating = ref(null)
 const editValues = reactive({})
 
+// 展开控制
+const expandedKeys = ref([])
+
+function toggle(key) {
+  const idx = expandedKeys.value.indexOf(key)
+  if (idx >= 0) {
+    expandedKeys.value.splice(idx, 1)
+  } else {
+    expandedKeys.value.push(key)
+  }
+}
+
 // 菜单列表（用于实例类型配置）
 const allMenus = ref([])
 const flagUpdating = ref(null)
 
-// 过滤掉 prediction_instance_types，单独展示
 const otherConfigs = computed(() => {
   return configs.value.filter(c => c.config_key !== 'prediction_instance_types')
 })
@@ -137,7 +166,6 @@ async function loadConfigs() {
 async function loadAllMenus() {
   try {
     const res = await request.get('/system/menu/tree')
-    // 展平树形结构，只保留有组件的叶子菜单(C类型)
     const flat = []
     function walk(nodes) {
       for (const n of nodes) {
@@ -210,7 +238,7 @@ async function handleSaveText(item) {
 }
 
 .page-header {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .page-header h2 {
@@ -225,75 +253,105 @@ async function handleSaveText(item) {
   color: var(--text-muted);
 }
 
-.config-list {
+/* 折叠面板 */
+.config-collapse {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
-.config-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
+.collapse-item {
   background: var(--bg-card);
   border: 1px solid var(--border-secondary);
-  border-radius: 12px;
-  transition: border-color 0.3s;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s;
 }
 
-.config-item:hover {
+.collapse-item:hover {
   border-color: var(--border-hover);
 }
 
-.config-info {
-  flex: 1;
+.collapse-item.open {
+  border-color: var(--accent);
 }
 
-.config-name {
+/* 折叠头 */
+.collapse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.collapse-header:hover {
+  background: var(--bg-secondary);
+}
+
+.ch-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ch-arrow {
+  font-size: 14px;
+  color: var(--text-muted);
+  transition: transform 0.25s ease;
+  flex-shrink: 0;
+}
+
+.collapse-item.open .ch-arrow {
+  transform: rotate(90deg);
+}
+
+.ch-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 4px;
 }
 
-.config-key {
+.ch-hint {
   font-size: 12px;
   color: var(--text-muted);
-  font-family: 'DM Mono', monospace;
-  background: var(--bg-secondary);
-  padding: 2px 8px;
-  border-radius: 4px;
-  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.config-remark {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 6px;
+/* 折叠内容 */
+.collapse-body {
+  border-top: 1px solid var(--border-secondary);
+  padding: 20px;
+  animation: slideDown 0.2s ease;
 }
 
-.config-value {
-  flex-shrink: 0;
-  margin-left: 24px;
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.collapse-value {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .text-value-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
-/* 实例类型配置区块 */
-.instance-type-section {
-  border-color: var(--accent) !important;
-}
-
+/* 实例类型列表 */
 .instance-type-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 420px;
 }
 
 .instance-type-row {
