@@ -20,7 +20,6 @@ _lock = Lock()
 class FeatureSchemaManager:
     """管理多套特征方案，每套方案定义特征列名称和对应权重"""
 
-    # 默认方案（兼容现有数据）
     DEFAULT_SCHEMA = {
         "id": "default",
         "name": "烘丝机默认方案",
@@ -50,7 +49,6 @@ class FeatureSchemaManager:
         self._load()
 
     def _load(self):
-        """从 JSON 文件加载方案，不存在则初始化默认方案"""
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -60,13 +58,11 @@ class FeatureSchemaManager:
             except Exception as e:
                 logger.error(f"加载特征方案失败: {e}")
                 self.schemas = {}
-        # 确保默认方案存在
         if "default" not in self.schemas:
             self.schemas["default"] = self.DEFAULT_SCHEMA.copy()
             self._save()
 
     def _save(self):
-        """持久化到 JSON 文件"""
         try:
             with open(DATA_FILE, "w", encoding="utf-8") as f:
                 json.dump(list(self.schemas.values()), f, ensure_ascii=False, indent=2)
@@ -74,7 +70,6 @@ class FeatureSchemaManager:
             logger.error(f"保存特征方案失败: {e}")
 
     def list_schemas(self) -> list:
-        """返回所有方案摘要"""
         result = []
         for s in self.schemas.values():
             result.append({
@@ -91,16 +86,10 @@ class FeatureSchemaManager:
         return result
 
     def get_schema(self, schema_id: str) -> Optional[dict]:
-        """获取完整方案（含特征列表和权重）"""
         return self.schemas.get(schema_id)
 
     def create_schema(self, name: str, features: list, target: dict,
                       brand_column: dict = None, description: str = "") -> dict:
-        """
-        创建新方案
-        features: [{"name": "xxx", "label": "xxx", "weight": 1.0}, ...]
-        target: {"name": "out_moist", "label": "出口水分"}
-        """
         schema_id = str(uuid.uuid4())[:8]
         now = time.strftime("%Y-%m-%d %H:%M:%S")
         schema = {
@@ -121,7 +110,6 @@ class FeatureSchemaManager:
         return schema
 
     def update_schema(self, schema_id: str, **kwargs) -> Optional[dict]:
-        """更新方案"""
         with _lock:
             schema = self.schemas.get(schema_id)
             if not schema:
@@ -136,7 +124,6 @@ class FeatureSchemaManager:
         return schema
 
     def delete_schema(self, schema_id: str) -> bool:
-        """删除方案（内置方案不可删）"""
         with _lock:
             schema = self.schemas.get(schema_id)
             if not schema:
@@ -148,7 +135,6 @@ class FeatureSchemaManager:
         return True
 
     def copy_schema(self, schema_id: str, new_name: str = None) -> Optional[dict]:
-        """复制方案"""
         source = self.schemas.get(schema_id)
         if not source:
             return None
@@ -165,26 +151,91 @@ class FeatureSchemaManager:
         return new_schema
 
     def get_weights(self, schema_id: str) -> dict:
-        """获取方案的特征权重字典 {feature_name: weight}"""
         schema = self.schemas.get(schema_id)
         if not schema:
             return {}
         return {f["name"]: f.get("weight", 1.0) for f in schema["features"]}
 
     def get_feature_names(self, schema_id: str) -> list:
-        """获取方案的特征列名列表"""
         schema = self.schemas.get(schema_id)
         if not schema:
             return []
         return [f["name"] for f in schema["features"]]
 
     def get_input_dim(self, schema_id: str) -> int:
-        """获取方案的输入维度"""
         schema = self.schemas.get(schema_id)
         if not schema:
-            return 11  # 默认
+            return 11
         return len(schema["features"])
 
+    def get_column_description(self, schema_id: str) -> dict:
+        """获取方案的列结构描述，用于前端提示用户"""
+        schema = self.schemas.get(schema_id)
+        if not schema:
+            return {}
+        features = schema["features"]
+        target = schema["target"]
+        brand = schema["brand_column"]
+        return {
+            "schema_id": schema_id,
+            "schema_name": schema["name"],
+            "input_dim": len(features),
+            "min_columns": len(features) + 2,
+            "features": [{"name": f["name"], "label": f.get("label", "")} for f in features],
+            "target": target,
+            "brand_column": brand,
+            "column_order": [f["name"] for f in features] + [target["name"], brand["name"]],
+            "csv_header_example": ",".join(
+                [f["name"] for f in features] + [target["name"], brand["name"]]
+            ),
+        }
 
-# 全局单例
+
 feature_schema_manager = FeatureSchemaManager()
+
+
+def init_menu_on_startup():
+    """启动时自动插入特征方案菜单（如果不存在）"""
+    try:
+        from core.database import SessionLocal
+        from models.menu import SysMenu
+        db = SessionLocal()
+        try:
+            # 查找"神经网络预测"父菜单
+            parent = db.query(SysMenu).filter(SysMenu.menu_name == "神经网络预测").first()
+            if not parent:
+                logger.warning("未找到'神经网络预测'父菜单，跳过菜单初始化")
+                return
+
+            # 检查是否已存在
+            existing = db.query(SysMenu).filter(
+                SysMenu.menu_name == "特征方案",
+                SysMenu.parent_id == parent.menu_id
+            ).first()
+            if existing:
+                return
+
+            # 获取最大排序号
+            max_order = db.query(SysMenu).filter(
+                SysMenu.parent_id == parent.menu_id
+            ).count()
+
+            menu = SysMenu(
+                menu_name="特征方案",
+                parent_id=parent.menu_id,
+                order_num=max_order + 1,
+                path="features",
+                component="prediction/features/index",
+                menu_type="C",
+                visible="0",
+                status="0",
+                icon="setting",
+                remark="自定义特征列方案管理",
+            )
+            db.add(menu)
+            db.commit()
+            logger.info("已自动插入'特征方案'菜单")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"菜单初始化跳过: {e}")
