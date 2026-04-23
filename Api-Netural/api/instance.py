@@ -140,8 +140,8 @@ async def add_instance(
             if base_model_id not in reg.get("versions", {}):
                 raise HTTPException(400, f"烘丝机模型版本不存在: {base_model_id}")
 
-    # 如果指定了 base_model_id，校验它是否存在且类型匹配
-    if base_model_id:
+    # 如果指定了 base_model_id（仅 realtime 类型），校验它是否存在且类型匹配
+    if instance_type == "realtime" and base_model_id:
         if base_model_id not in model_manager.saved_models:
             raise HTTPException(400, f"已保存模型不存在: {base_model_id}")
         saved = model_manager.saved_models[base_model_id]
@@ -213,8 +213,21 @@ async def update_instance(
             raise HTTPException(400, f"模型不存在: {model_key}")
         inst.model_key = model_key
     if base_model_id is not None:
-        if base_model_id and base_model_id not in model_manager.saved_models:
-            raise HTTPException(400, f"已保存模型不存在: {base_model_id}")
+        if base_model_id:
+            if inst.instance_type == "dryer" or (instance_type == "dryer"):
+                # 烘丝机模型：从 dryer registry 校验
+                from pathlib import Path
+                import json as _json
+                dryer_dir = Path(__file__).parent.parent / "saved_models" / "dryer"
+                reg_file = dryer_dir / "registry.json"
+                if reg_file.exists():
+                    reg = _json.loads(reg_file.read_text())
+                    if base_model_id not in reg.get("versions", {}):
+                        raise HTTPException(400, f"烘丝机模型版本不存在: {base_model_id}")
+            else:
+                # 通用模型：从 model_manager 校验
+                if base_model_id not in model_manager.saved_models:
+                    raise HTTPException(400, f"已保存模型不存在: {base_model_id}")
         inst.base_model_id = base_model_id
     if interval is not None:
         inst.interval = int(interval * 10)
