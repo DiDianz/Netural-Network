@@ -583,6 +583,67 @@ function renderAnalysisCharts() {
 async function startTraining() {
   if (!hasData.value) return ElMessage.warning('请先上传数据')
 
+  // 检查是否已有训练好的模型
+  if (versions.value.length > 0) {
+    try {
+      const result = await ElMessageBox.confirm(
+        `当前已有 ${versions.value.length} 个训练好的模型，是否仍要训练新模型？`,
+        '模型已存在',
+        {
+          confirmButtonText: '训练新模型',
+          cancelButtonText: '选择已有模型',
+          distinguishCancelAndClose: true,
+          type: 'warning',
+        }
+      )
+      // 用户点了"训练新模型"，继续训练
+    } catch (action) {
+      if (action === 'cancel') {
+        // 用户点了"选择已有模型"，弹出选择框
+        await showModelSelector()
+        return
+      }
+      // action === 'close'，用户关掉了对话框，什么都不做
+      return
+    }
+  }
+
+  doStartTraining()
+}
+
+// 选择已有模型
+async function showModelSelector() {
+  const modelOptions = versions.value.map(v => ({
+    label: `${v.version}  |  R²: ${v.metrics?.final_r2 ?? '-'}  |  Loss: ${v.metrics?.best_test_loss ?? '-'}  |  ${v.is_active ? '✓ 当前激活' : ''}`,
+    value: v.version,
+    isActive: v.is_active
+  }))
+
+  try {
+    const { value: selectedVersion } = await ElMessageBox.prompt(
+      '输入要激活的模型版本号，或从下方列表中复制：\n\n' +
+      modelOptions.map(o => o.label).join('\n'),
+      '选择已有模型',
+      {
+        confirmButtonText: '激活',
+        cancelButtonText: '取消',
+        inputValue: versions.value.find(v => v.is_active)?.version || '',
+        inputPlaceholder: '粘贴版本号',
+      }
+    )
+
+    if (selectedVersion) {
+      await doActivate(selectedVersion)
+      ElMessage.success(`已激活模型: ${selectedVersion}`)
+      activeTab.value = 'predict'  // 跳转到预测页
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// 执行训练
+function doStartTraining() {
   training.value = true
   trainingDone.value = false
   trainProgress.value = null
