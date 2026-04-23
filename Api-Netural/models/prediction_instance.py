@@ -10,6 +10,7 @@ class PredictionInstance(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="实例ID")
     name = Column(String(100), nullable=False, comment="实例名称（菜单显示名称）")
+    instance_type = Column(String(50), default="realtime", comment="实例类型: realtime=实时预测[通用], dryer=烘丝机出口水分模型")
     device_id = Column(Integer, nullable=False, comment="PLC 设备ID")
     point_ids = Column(String(500), default="", comment="点位ID列表，逗号分隔，空=全部启用点位")
     model_key = Column(String(50), default="lstm", comment="模型类型: lstm/gru/transformer")

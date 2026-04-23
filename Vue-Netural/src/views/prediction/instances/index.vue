@@ -20,17 +20,26 @@
       >
         <div class="ic-header">
           <span class="ic-name">{{ inst.name }}</span>
-          <el-tag
-            :type="inst.device_connected ? 'success' : 'info'"
-            size="small"
-            effect="dark"
-          >
-            {{ inst.device_connected ? 'PLC已连接' : 'PLC未连接' }}
-          </el-tag>
+          <div class="ic-header-tags">
+            <el-tag
+              :type="inst.instance_type === 'dryer' ? 'warning' : 'primary'"
+              size="small"
+              effect="plain"
+            >
+              {{ inst.instance_type === 'dryer' ? '烘丝机' : '通用' }}
+            </el-tag>
+            <el-tag
+              :type="inst.device_connected ? 'success' : 'info'"
+              size="small"
+              effect="dark"
+            >
+              {{ inst.device_connected ? 'PLC已连接' : 'PLC未连接' }}
+            </el-tag>
+          </div>
         </div>
 
         <div class="ic-body">
-          <div class="ic-info-row">
+          <div class="ic-info-row" v-if="inst.instance_type === 'realtime'">
             <span class="ic-label">模型</span>
             <el-tag :type="modelTagType(inst.model_key)" size="small">
               {{ inst.model_key.toUpperCase() }}
@@ -41,6 +50,11 @@
             <el-tag v-else type="info" size="small" effect="plain">
               默认权重
             </el-tag>
+          </div>
+          <div class="ic-info-row" v-else>
+            <span class="ic-label">模型</span>
+            <el-tag type="warning" size="small">LSTM+Attention</el-tag>
+            <el-tag type="info" size="small" effect="plain">烘丝机专用</el-tag>
           </div>
           <div class="ic-info-row">
             <span class="ic-label">设备</span>
@@ -119,6 +133,19 @@
           <el-input v-model="formData.name" placeholder="如：1号产线预测" maxlength="50" show-word-limit />
         </el-form-item>
 
+        <el-form-item label="实例类型" required>
+          <el-radio-group v-model="formData.instance_type" size="default" @change="handleTypeChange">
+            <el-radio-button value="realtime">
+              <el-icon><Monitor /></el-icon>
+              <span style="margin-left: 4px">实时预测[通用]</span>
+            </el-radio-button>
+            <el-radio-button value="dryer">
+              <el-icon><TrendCharts /></el-icon>
+              <span style="margin-left: 4px">烘丝机出口水分模型</span>
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
         <el-form-item label="PLC 设备" required>
           <el-select
             v-model="formData.device_id"
@@ -163,7 +190,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="预测模型" required>
+        <el-form-item label="预测模型" required v-if="formData.instance_type === 'realtime'">
           <el-radio-group v-model="formData.model_key" size="default">
             <el-radio-button value="lstm">LSTM</el-radio-button>
             <el-radio-button value="gru">GRU</el-radio-button>
@@ -171,7 +198,7 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item label="已保存模型">
+        <el-form-item label="已保存模型" v-if="formData.instance_type === 'realtime'">
           <el-select
             v-model="formData.base_model_id"
             placeholder="选择已保存的模型版本（可选，不选则使用默认权重）"
@@ -198,6 +225,12 @@
           <el-button size="default" :icon="Refresh" circle style="margin-left: 8px" @click="loadSavedModels" :loading="loadingSavedModels" />
         </el-form-item>
 
+        <el-form-item v-if="formData.instance_type === 'dryer'" label="模型说明">
+          <el-text type="info" size="small">
+            烘丝机出口水分模型使用独立的 LSTM+Attention 架构，请先在「烘丝机出口水分模型」页面完成训练。
+          </el-text>
+        </el-form-item>
+
         <el-form-item label="预测间隔">
           <el-input-number v-model="formData.interval" :min="0.1" :max="30" :step="0.1" :precision="1" />
           <span style="margin-left: 8px; color: #888">秒</span>
@@ -218,7 +251,7 @@
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Edit, Delete, Monitor, Refresh } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Monitor, Refresh, TrendCharts } from '@element-plus/icons-vue'
 import { getInstanceList, addInstance, updateInstance, deleteInstance } from '../../../api/instance'
 import { getPlcDeviceList, getPlcPointList } from '../../../api/plc'
 import { getSavedModels } from '../../../api/model'
@@ -245,6 +278,7 @@ const editingInstance = ref(null)
 const submitting = ref(false)
 const formData = reactive({
   name: '',
+  instance_type: 'realtime',
   device_id: null,
   point_ids_array: [],
   model_key: 'lstm',
@@ -254,6 +288,14 @@ const formData = reactive({
 
 function modelTagType(key) {
   return { lstm: '', gru: 'success', transformer: 'warning' }[key] || 'info'
+}
+
+function handleTypeChange(val) {
+  // 切换类型时重置相关字段
+  if (val === 'dryer') {
+    formData.model_key = 'lstm'
+    formData.base_model_id = ''
+  }
 }
 
 onMounted(async () => {
@@ -307,6 +349,7 @@ function openDialog(inst = null) {
   editingInstance.value = inst
   if (inst) {
     formData.name = inst.name
+    formData.instance_type = inst.instance_type || 'realtime'
     formData.device_id = inst.device_id
     formData.model_key = inst.model_key || 'lstm'
     formData.base_model_id = inst.base_model_id || ''
@@ -316,6 +359,7 @@ function openDialog(inst = null) {
       : []
   } else {
     formData.name = ''
+    formData.instance_type = 'realtime'
     formData.device_id = null
     formData.model_key = 'lstm'
     formData.base_model_id = ''
@@ -349,6 +393,7 @@ async function handleSubmit() {
   try {
     const params = {
       name: formData.name.trim(),
+      instance_type: formData.instance_type,
       device_id: formData.device_id,
       point_ids: formData.point_ids_array.join(','),
       model_key: modelKey,
@@ -448,6 +493,12 @@ function goToInstance(inst) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.ic-header-tags {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .ic-name {

@@ -6,6 +6,7 @@ import json
 import asyncio
 import time
 import numpy as np
+import torch
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -17,6 +18,11 @@ from models.prediction_instance import PredictionInstance
 from models.plc_db_point import PlcDbPoint
 
 router = APIRouter(prefix="/instance", tags=["预测实例"])
+
+
+def torch_load_safe(path):
+    """安全加载 PyTorch 模型"""
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 @router.get("/list")
@@ -45,6 +51,7 @@ async def list_instances(db: Session = Depends(get_db)):
         data.append({
             "id": inst.id,
             "name": inst.name,
+            "instance_type": inst.instance_type or "realtime",
             "device_id": inst.device_id,
             "device_name": device_name,
             "device_connected": device_connected,
@@ -86,6 +93,7 @@ async def get_instance(instance_id: int = Query(...), db: Session = Depends(get_
     return {"code": 200, "data": {
         "id": inst.id,
         "name": inst.name,
+        "instance_type": inst.instance_type or "realtime",
         "device_id": inst.device_id,
         "device_name": device_name,
         "point_ids": inst.point_ids or "",
@@ -101,6 +109,7 @@ async def get_instance(instance_id: int = Query(...), db: Session = Depends(get_
 @router.post("/add")
 async def add_instance(
     name: str = Query(..., min_length=1, max_length=100),
+    instance_type: str = Query("realtime", description="实例类型: realtime=实时预测[通用], dryer=烘丝机出口水分模型"),
     device_id: int = Query(...),
     point_ids: str = Query("", description="逗号分隔的点位ID"),
     model_key: str = Query("lstm"),
@@ -109,7 +118,11 @@ async def add_instance(
     db: Session = Depends(get_db)
 ):
     """新增预测实例"""
-    if model_key not in model_manager.models:
+    # 校验实例类型
+    if instance_type not in ("realtime", "dryer"):
+        raise HTTPException(400, f"不支持的实例类型: {instance_type}，可选: realtime / dryer")
+
+    if instance_type == "realtime" and model_key not in model_manager.models:
         raise HTTPException(400, f"模型不存在: {model_key}")
 
     # 如果指定了 base_model_id，校验它是否存在且类型匹配
@@ -133,6 +146,7 @@ async def add_instance(
 
     inst = PredictionInstance(
         name=name,
+        instance_type=instance_type,
         device_id=device_id,
         point_ids=point_ids,
         model_key=model_key,
@@ -151,6 +165,7 @@ async def add_instance(
 async def update_instance(
     id: int = Query(...),
     name: str = Query(None),
+    instance_type: str = Query(None),
     device_id: int = Query(None),
     point_ids: str = Query(None),
     model_key: str = Query(None),
@@ -166,6 +181,10 @@ async def update_instance(
 
     if name is not None:
         inst.name = name
+    if instance_type is not None:
+        if instance_type not in ("realtime", "dryer"):
+            raise HTTPException(400, f"不支持的实例类型: {instance_type}")
+        inst.instance_type = instance_type
     if device_id is not None:
         from models.plc_device import PlcDevice
         device = db.query(PlcDevice).filter(PlcDevice.id == device_id).first()
@@ -210,7 +229,7 @@ async def instance_predict_stream(
     db: Session = Depends(get_db)
 ):
     """
-    单实例 SSE 预测流 — 读取该实例绑定的 PLC，用指定模型推理
+    单实例 SSE 预测流 — 根据 instance_type 自动路由到通用模型或烘丝机模型
     """
     inst = db.query(PredictionInstance).filter(PredictionInstance.id == instance_id).first()
     if not inst:
@@ -218,30 +237,22 @@ async def instance_predict_stream(
     if not inst.is_active:
         raise HTTPException(400, "实例已停用")
 
+    instance_type = inst.instance_type or "realtime"
     device_id = inst.device_id
-    model_key = inst.model_key
     interval = (inst.interval or 10) / 10.0
-    base_model_id = inst.base_model_id or ""
 
     if not plc_manager.is_connected(device_id):
         raise HTTPException(400, f"PLC 设备 {device_id} 未连接")
-    if model_key not in model_manager.models:
-        raise HTTPException(400, f"模型不存在: {model_key}")
-
-    # 如果指定了已保存模型，先加载权重
-    if base_model_id and base_model_id in model_manager.saved_models:
-        model_manager.load_model_weights(model_key, base_model_id)
-        print(f"实例 {inst.id}: 已加载模型权重 {base_model_id}")
 
     # 获取点位
-    query = db.query(PlcDbPoint).filter(
+    query_pts = db.query(PlcDbPoint).filter(
         PlcDbPoint.device_id == device_id,
         PlcDbPoint.is_active == 1
     )
     if inst.point_ids:
         pids = [int(x.strip()) for x in inst.point_ids.split(",") if x.strip()]
-        query = query.filter(PlcDbPoint.id.in_(pids))
-    points = query.all()
+        query_pts = query_pts.filter(PlcDbPoint.id.in_(pids))
+    points = query_pts.all()
     if not points:
         raise HTTPException(400, "没有可用的启用点位")
 
@@ -251,14 +262,130 @@ async def instance_predict_stream(
         "data_type": p.data_type, "bit_index": p.bit_index
     } for p in points]
 
+    # ========== 烘丝机出口水分模型 ==========
+    if instance_type == "dryer":
+        from core.dryer_model import DryerModel
+        from pathlib import Path
+        import json as _json
+
+        dryer_model_dir = Path(__file__).parent.parent / "saved_models" / "dryer"
+        registry_file = dryer_model_dir / "registry.json"
+        if not registry_file.exists():
+            raise HTTPException(400, "烘丝机模型未训练，请先在烘丝机页面训练模型")
+
+        registry = _json.loads(registry_file.read_text())
+        version = registry.get("active_version")
+        if not version or version not in registry.get("versions", {}):
+            raise HTTPException(400, "没有可用的烘丝机训练模型")
+
+        model_path = dryer_model_dir / f"{version}.pth"
+        if not model_path.exists():
+            raise HTTPException(400, f"烘丝机模型文件不存在: {version}")
+
+        checkpoint = torch_load_safe(model_path)
+        config = checkpoint['config']
+        norm_stats = checkpoint['normalize_stats']
+
+        dryer_model = DryerModel(
+            input_dim=config['input_dim'],
+            hidden_dim=config['hidden_dim'],
+            num_layers=config['num_layers'],
+            dropout=config['dropout']
+        )
+        dryer_model.load_state_dict(checkpoint['model_state'])
+        dryer_model.eval()
+
+        window_size = config['window_size']
+        input_dim = config['input_dim']
+
+        buffer = []
+        for _ in range(window_size):
+            buffer.append(list(np.random.randn(input_dim).astype(float)))
+
+        async def dryer_event_generator():
+            tick = 0
+            try:
+                while True:
+                    tick += 1
+                    timestamp = time.time()
+
+                    plc_result = plc_manager.read_multiple(device_id, point_list)
+                    if not plc_result["success"]:
+                        yield f"data: {json.dumps({'error': plc_result['msg'], 'tick': tick}, ensure_ascii=False)}\n\n"
+                        await asyncio.sleep(interval)
+                        continue
+
+                    values = []
+                    for item in plc_result["data"]:
+                        val = float(item["value"]) if item["success"] and item["value"] is not None else 0.0
+                        values.append(val)
+                    padded = values[:input_dim]
+                    while len(padded) < input_dim:
+                        padded.append(0.0)
+                    buffer.append(padded)
+                    while len(buffer) > window_size:
+                        buffer.pop(0)
+
+                    try:
+                        input_arr = np.array(buffer, dtype=np.float32)
+                        from api.dryer import _normalize as dryer_normalize
+                        input_norm, _ = dryer_normalize(input_arr, norm_stats['features'])
+                        input_tensor = torch.tensor(input_norm).unsqueeze(0)
+
+                        with torch.no_grad():
+                            pred_norm, unc_norm = dryer_model(input_tensor)
+
+                        tgt_mean = norm_stats['target']['mean'][0] if isinstance(norm_stats['target']['mean'], list) else norm_stats['target']['mean']
+                        tgt_std = norm_stats['target']['std'][0] if isinstance(norm_stats['target']['std'], list) else norm_stats['target']['std']
+
+                        pred_val = float(pred_norm.numpy()[0, 0]) * tgt_std + tgt_mean
+                        unc_val = float(unc_norm.numpy()[0, 0]) * tgt_std
+
+                        payload = {
+                            "timestamp": timestamp,
+                            "tick": tick,
+                            "instance_id": inst.id,
+                            "instance_type": "dryer",
+                            "model_name": "烘丝机出口水分模型",
+                            "prediction": round(pred_val, 4),
+                            "uncertainty": round(unc_val, 4),
+                            "confidence_upper": round(pred_val + 2 * unc_val, 4),
+                            "confidence_lower": round(pred_val - 2 * unc_val, 4),
+                            "in_target": 14.0 <= pred_val <= 15.0,
+                            "feature_weights": dryer_model.get_feature_weights(),
+                            "plc_points": plc_result["data"]
+                        }
+                        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    except Exception as e:
+                        yield f"data: {json.dumps({'error': str(e), 'tick': tick}, ensure_ascii=False)}\n\n"
+
+                    await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                pass
+
+        return StreamingResponse(
+            dryer_event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+        )
+
+    # ========== 实时预测[通用] ==========
+    model_key = inst.model_key
+    base_model_id = inst.base_model_id or ""
+
+    if model_key not in model_manager.models:
+        raise HTTPException(400, f"模型不存在: {model_key}")
+
+    if base_model_id and base_model_id in model_manager.saved_models:
+        model_manager.load_model_weights(model_key, base_model_id)
+        print(f"实例 {inst.id}: 已加载模型权重 {base_model_id}")
+
     model = model_manager.models[model_key]["model"]
     model.eval()
     input_dim = model_manager.input_dim
     window_size = model_manager.window_size
 
-    # 每个实例独立的 buffer
     buffer = []
-    # 预填充随机数据
     for _ in range(window_size):
         buffer.append(list(np.random.randn(input_dim).astype(float)))
 
@@ -270,14 +397,12 @@ async def instance_predict_stream(
                 tick += 1
                 timestamp = time.time()
 
-                # 1. 读取 PLC 数据
                 plc_result = plc_manager.read_multiple(device_id, point_list)
                 if not plc_result["success"]:
                     yield f"data: {json.dumps({'error': plc_result['msg'], 'tick': tick}, ensure_ascii=False)}\n\n"
                     await asyncio.sleep(interval)
                     continue
 
-                # 2. 转为特征向量
                 values = []
                 for item in plc_result["data"]:
                     if item["success"] and item["value"] is not None:
@@ -285,7 +410,6 @@ async def instance_predict_stream(
                     else:
                         values.append(0.0)
 
-                # 填充到 input_dim
                 padded = values[:input_dim]
                 while len(padded) < input_dim:
                     padded.append(0.0)
@@ -293,7 +417,6 @@ async def instance_predict_stream(
                 while len(buffer) > window_size:
                     buffer.pop(0)
 
-                # 3. 推理
                 try:
                     input_seq = np.array(buffer, dtype=np.float32)
                     input_tensor = torch.tensor(input_seq).unsqueeze(0).to(model_manager.device)
@@ -301,7 +424,6 @@ async def instance_predict_stream(
                     with torch.no_grad():
                         pred = model(input_tensor).cpu().numpy()[0]
 
-                    # MC Dropout
                     model.train()
                     mc_preds = []
                     for _ in range(10):
@@ -317,6 +439,7 @@ async def instance_predict_stream(
                         "timestamp": timestamp,
                         "tick": tick,
                         "instance_id": inst.id,
+                        "instance_type": "realtime",
                         "model_key": model_key,
                         "model_name": model_manager.models[model_key]["display_name"],
                         "prediction": round(mean_pred, 6),
