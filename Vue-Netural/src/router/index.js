@@ -117,6 +117,12 @@ const routes = [
         name: 'PredictionTraining',
         component: () => import('../views/prediction/training/index.vue'),
         meta: { title: '模型训练', icon: 'cpu' }
+      },
+      {
+        path: 'dryer',
+        name: 'PredictionDryer',
+        component: () => import('../views/prediction/dryer/index.vue'),
+        meta: { title: '烘丝机出口水分模型', icon: 'trend-charts' }
       }
     ]
   },
