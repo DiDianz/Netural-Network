@@ -13,6 +13,11 @@
           <div class="config-name">预测实例类型</div>
           <div class="config-key">prediction_instance_types</div>
           <div class="config-remark">从菜单中选取可用作预测实例类型的菜单项。在「菜单管理」中可设置菜单是否可用作实例类型。</div>
+          <div class="config-remark" style="margin-top: 4px">
+            <el-tag size="small" type="success" effect="plain">
+              已启用 {{ allMenus.filter(m => m.as_instance_type === 'Y').length }} 项
+            </el-tag>
+          </div>
         </div>
         <div class="config-value">
           <div class="instance-type-list">
@@ -132,11 +137,11 @@ async function loadConfigs() {
 async function loadAllMenus() {
   try {
     const res = await request.get('/system/menu/tree')
-    // 展平树形结构，只保留菜单类型(C)
+    // 展平树形结构，只保留有组件的叶子菜单(C类型)
     const flat = []
     function walk(nodes) {
       for (const n of nodes) {
-        if (n.menu_type === 'C') {
+        if (n.menu_type === 'C' && n.component) {
           flat.push(n)
         }
         if (n.children && n.children.length) walk(n.children)
@@ -158,7 +163,7 @@ async function handleInstanceFlagChange(menu, val) {
       parent_id: menu.parent_id || 0,
     })
     menu.as_instance_type = val ? 'Y' : 'N'
-    ElMessage.success(`${menu.menu_name} 已${val ? '启用' : '禁用'}作为实例类型`)
+    ElMessage.success(`${menu.menu_name} 已${val ? '启用' : '禁用'}作为实例类型（下次新建实例时生效）`)
   } catch (e) {
     ElMessage.error('修改失败')
   } finally {

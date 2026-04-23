@@ -305,7 +305,7 @@ function handleTypeChange(val) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadInstances(), loadDevices(), loadSavedModels(), loadInstanceTypes()])
+  await Promise.all([loadInstances(), loadDevices(), loadSavedModels()])
 })
 
 async function loadInstanceTypes() {
@@ -313,6 +313,18 @@ async function loadInstanceTypes() {
     const res = await request.get('/system/menu/instance-types')
     if (res.data && res.data.length > 0) {
       instanceTypes.value = res.data
+    }
+    // 如果当前编辑的实例类型不在列表中，追加进去（允许编辑已有值）
+    if (editingInstance.value) {
+      const currentType = editingInstance.value.instance_type || 'realtime'
+      if (!instanceTypes.value.some(t => t.key === currentType)) {
+        instanceTypes.value.push({
+          key: currentType,
+          name: currentType,
+          icon: '',
+          desc: '（该类型已停用）'
+        })
+      }
     }
   } catch (e) {
     // 使用默认值
@@ -384,6 +396,8 @@ function openDialog(inst = null) {
     formData.interval = 1.0
     formData.point_ids_array = []
   }
+  // 每次打开弹窗都重新加载实例类型，确保与系统设置同步
+  loadInstanceTypes()
   dialogVisible.value = true
 }
 
