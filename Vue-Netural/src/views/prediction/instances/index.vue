@@ -8,6 +8,7 @@
         <span class="page-desc">每个实例独立连接一个 PLC，独立运行预测。点击实例名称进入预测画面。</span>
       </div>
       <el-button type="primary" :icon="Plus" @click="openDialog()">新增实例</el-button>
+      <el-button :icon="Refresh" @click="loadInstances" :loading="loading" style="margin-left: 8px">刷新</el-button>
     </div>
 
     <!-- 实例卡片列表 -->
@@ -280,7 +281,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, onBeforeRouteUpdate } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Edit, Delete, Monitor, Refresh } from '@element-plus/icons-vue'
 import { getInstanceList, addInstance, updateInstance, deleteInstance } from '../../../api/instance'
@@ -349,7 +350,29 @@ function handleTypeChange(val) {
 
 onMounted(async () => {
   await Promise.all([loadInstances(), loadDevices(), loadSavedModels()])
+  // 监听页面可见性变化（从其他页面切回时刷新）
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // 定时刷新（每 5 秒），确保 PLC 状态实时更新
+  refreshTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      loadInstances()
+    }
+  }, 5000)
 })
+
+// 组件卸载时移除监听和定时器
+import { onUnmounted } from 'vue'
+let refreshTimer = null
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  if (refreshTimer) clearInterval(refreshTimer)
+})
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    loadInstances()
+  }
+}
 
 async function loadInstanceTypes() {
   try {
