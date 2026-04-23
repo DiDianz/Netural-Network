@@ -103,7 +103,7 @@ def _init_instance_type_flags(db):
 
 
 def _sync_saved_models_to_db(db):
-    """将本地 registry.json 中的已保存模型同步到数据库"""
+    """将本地 registry.json 中的已保存模型同步到数据库，并补录未注册的 _best.pth 文件"""
     from models.saved_model import SavedModel
     from pathlib import Path
     import json as _json
@@ -115,6 +115,7 @@ def _sync_saved_models_to_db(db):
 
     # 1. 同步通用模型 registry
     registry_path = base_dir / "registry.json"
+    registry = {}
     if registry_path.exists():
         try:
             registry = _json.loads(registry_path.read_text())
@@ -142,12 +143,80 @@ def _sync_saved_models_to_db(db):
         except Exception as e:
             print(f"同步通用模型注册表失败: {e}")
 
+    # 1.5 补录未在 registry 中的 _best.pth 文件
+    best_meta = {
+        "lstm_best.pth": {"model_key": "lstm", "display_name": "LSTM + Attention"},
+        "gru_best.pth": {"model_key": "gru", "display_name": "GRU"},
+        "transformer_best.pth": {"model_key": "transformer", "display_name": "Transformer"},
+    }
+    registry_changed = False
+    for fname, meta in best_meta.items():
+        fpath = base_dir / fname
+        if not fpath.exists():
+            continue
+        model_id = f"{meta['model_key']}_best"
+        # 检查是否已在 registry 或数据库中
+        in_registry = model_id in registry or any(
+            v.get("filename") == fname for v in registry.values()
+        )
+        in_db = db.query(SavedModel).filter(SavedModel.model_id == model_id).first()
+        if in_db:
+            continue
+        # 写入 registry
+        if not in_registry:
+            mtime = datetime.fromtimestamp(fpath.stat().st_mtime)
+            entry = {
+                "model_id": model_id,
+                "model_key": meta["model_key"],
+                "display_name": meta["display_name"],
+                "name": f"{meta['display_name']}_{mtime.strftime('%Y%m%d')}_best",
+                "filename": fname,
+                "epochs": 0,
+                "best_val_loss": 0,
+                "trained_at": mtime.strftime("%Y-%m-%d %H:%M:%S"),
+                "remark": "从 best 权重文件自动同步",
+                "file_size_kb": round(fpath.stat().st_size / 1024, 1),
+                "schema_id": "default",
+                "input_dim": 11,
+            }
+            registry[model_id] = entry
+            registry_changed = True
+            print(f"  registry.json 已补录: {model_id} ({fname})")
+        # 写入数据库
+        reg_entry = registry.get(model_id, {})
+        record = SavedModel(
+            model_id=model_id,
+            model_type="general",
+            model_key=meta["model_key"],
+            display_name=meta["display_name"],
+            name=reg_entry.get("name", f"{meta['display_name']}_best"),
+            filename=fname,
+            epochs=reg_entry.get("epochs", 0),
+            best_val_loss=reg_entry.get("best_val_loss", 0),
+            trained_at=datetime.strptime(reg_entry["trained_at"], "%Y-%m-%d %H:%M:%S") if reg_entry.get("trained_at") else datetime.now(),
+            remark=reg_entry.get("remark", "从 best 权重文件自动同步"),
+            file_size_kb=reg_entry.get("file_size_kb", round(fpath.stat().st_size / 1024, 1)),
+            schema_id=reg_entry.get("schema_id", "default"),
+            input_dim=reg_entry.get("input_dim", 11),
+        )
+        db.add(record)
+        synced += 1
+        print(f"  数据库已补录: {model_id} ({fname})")
+
+    # 回写 registry.json
+    if registry_changed:
+        try:
+            registry_path.write_text(_json.dumps(registry, ensure_ascii=False, indent=2))
+            print("  registry.json 已更新")
+        except Exception as e:
+            print(f"  写入 registry.json 失败: {e}")
+
     # 2. 同步烘丝机模型 registry
     dryer_registry_path = base_dir / "dryer" / "registry.json"
     if dryer_registry_path.exists():
         try:
-            registry = _json.loads(dryer_registry_path.read_text())
-            for version, info in registry.get("versions", {}).items():
+            dryer_reg = _json.loads(dryer_registry_path.read_text())
+            for version, info in dryer_reg.get("versions", {}).items():
                 existing = db.query(SavedModel).filter(SavedModel.model_id == version).first()
                 if existing:
                     continue
@@ -167,7 +236,7 @@ def _sync_saved_models_to_db(db):
                     file_size_kb=round((base_dir / "dryer" / f"{version}.pth").stat().st_size / 1024, 1) if (base_dir / "dryer" / f"{version}.pth").exists() else 0,
                     schema_id="dryer",
                     input_dim=config.get("input_dim", 12),
-                    remark=f"active={'Y' if version == registry.get('active_version') else 'N'}",
+                    remark=f"active={'Y' if version == dryer_reg.get('active_version') else 'N'}",
                 )
                 db.add(record)
                 synced += 1
