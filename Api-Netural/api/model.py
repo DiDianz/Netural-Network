@@ -1,4 +1,7 @@
 # api/model.py
+"""
+模型管理 API — 支持自定义特征列 + 权重
+"""
 import json
 import asyncio
 import uuid
@@ -10,6 +13,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.model_manager import model_manager
 from core.data_manager import data_manager, training_job_manager
+from core.feature_schema import feature_schema_manager
 from schemas.model import SwitchRequest, TrainRequest
 from models.train_log import TrainLog
 from models.train_trend import TrainTrend
@@ -130,7 +134,7 @@ async def train_history(
     }
 
 
-# ========== 上传数据训练 ==========
+# ========== 上传数据训练（支持自定义特征列） ==========
 
 @router.post("/train/upload")
 async def start_training_with_upload(
@@ -141,6 +145,8 @@ async def start_training_with_upload(
     batch_size: int = Query(32, ge=1, le=256),
     base_model_id: str = Query(None, description="基础模型版本ID，用于继续训练"),
     model_name: str = Query(None, description="自定义模型名称"),
+    schema_id: str = Query("default", description="特征方案ID"),
+    feature_weights: str = Query(None, description="JSON格式权重覆盖，如 {\"proc_steam_vol\": 2.0}"),
     db: Session = Depends(get_db)
 ):
     if model_manager.training_state["is_training"]:
@@ -150,6 +156,27 @@ async def start_training_with_upload(
 
     if model_key not in model_manager.models:
         raise HTTPException(400, f"模型不存在: {model_key}")
+
+    # ===== 解析特征方案 =====
+    schema = feature_schema_manager.get_schema(schema_id)
+    if not schema:
+        raise HTTPException(400, f"特征方案不存在: {schema_id}")
+
+    input_dim = len(schema["features"])
+
+    # 获取权重
+    weights_dict = feature_schema_manager.get_weights(schema_id)
+    if feature_weights:
+        try:
+            override = json.loads(feature_weights)
+            # 校验权重 key 必须是方案内的特征名
+            valid_names = set(weights_dict.keys())
+            for k in override:
+                if k not in valid_names:
+                    raise HTTPException(400, f"未知特征名: {k}，方案内的特征为: {sorted(valid_names)}")
+            weights_dict.update(override)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "feature_weights 格式错误，需为 JSON 对象")
 
     ids = [f.strip() for f in file_ids.split(",") if f.strip()]
     if not ids:
@@ -165,17 +192,24 @@ async def start_training_with_upload(
         raise HTTPException(400, "训练数据为空或未找到品牌分组数据")
 
     logger.info(f"训练请求: model={model_key}, files={ids}, combined_rows={len(combined)}, "
-                f"cols={len(combined[0]) if combined else 0}")
+                f"cols={len(combined[0]) if combined else 0}, schema={schema_id}, input_dim={input_dim}")
 
     if len(combined) < model_manager.window_size + 10:
         raise HTTPException(400,
             f"数据量不足（共 {len(combined)} 行），至少需要 {model_manager.window_size + 10} 行。"
             f"请检查上传文件的数据行数是否足够。")
 
+    # ===== 如果 input_dim 与当前模型不同，重建模型 =====
+    current_dim = model_manager.input_dim
+    if input_dim != current_dim:
+        logger.info(f"特征维度变化: {current_dim} → {input_dim}，将重建模型")
+        model_manager.rebuild_models(input_dim)
+
     job_id = str(uuid.uuid4())[:8]
     job = {
         "job_id": job_id, "model_key": model_key, "total_epochs": epochs,
-        "is_training": True, "start_time": time.time()
+        "is_training": True, "start_time": time.time(),
+        "schema_id": schema_id, "input_dim": input_dim,
     }
     training_job_manager.add_job(job_id, job)
 
@@ -183,13 +217,14 @@ async def start_training_with_upload(
         model_manager.train_model_with_data1(
             model_key=model_key, data=combined, job_id=job_id,
             epochs=epochs, lr=lr, batch_size=batch_size, db=db,
-            base_model_id=base_model_id, model_name=model_name
+            base_model_id=base_model_id, model_name=model_name,
+            feature_weights=weights_dict, schema_id=schema_id,
         )
     )
-    msg = f"已开始用上传数据训练 {model_key} 模型"
+    msg = f"已开始用上传数据训练 {model_key} 模型（{input_dim} 个特征）"
     if base_model_id:
         msg += f" (基于已有模型 {base_model_id})"
-    return {"code": 200, "msg": msg, "job_id": job_id}
+    return {"code": 200, "msg": msg, "job_id": job_id, "input_dim": input_dim}
 
 
 @router.post("/train/upload/stop")
@@ -254,46 +289,7 @@ async def get_train_trend(
              "train_loss": r.train_loss, "val_loss": r.val_loss,
              "best_val_loss": r.best_val_loss, "learning_rate": r.learning_rate,
              "elapsed_seconds": r.elapsed_seconds,
-             "predictions": json.loads(str(r.predictions_json)) if r.predictions_json is not None else [],
-             "actuals": json.loads(str(r.actuals_json)) if r.actuals_json is not None else [],
-             "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at is not None else None}
-            for r in records
-        ]
-    }
-
-
-@router.get("/train/trend/list")
-async def list_train_trends(
-    keyword: str = Query(None),
-    limit: int = Query(20, ge=1, le=200),
-    db: Session = Depends(get_db)
-):
-    from sqlalchemy import func
-    query = db.query(
-        TrainTrend.train_id, TrainTrend.model_key, TrainTrend.model_name,
-        func.max(TrainTrend.total_epochs).label("total_epochs"),
-        func.max(TrainTrend.best_val_loss).label("best_val_loss"),
-        func.max(TrainTrend.elapsed_seconds).label("total_seconds"),
-        func.max(TrainTrend.created_at).label("created_at"),
-        func.count(TrainTrend.id).label("epoch_count")
-    ).group_by(TrainTrend.train_id, TrainTrend.model_key, TrainTrend.model_name)
-
-    if keyword:
-        like_kw = f"%{keyword}%"
-        query = query.filter(
-            TrainTrend.train_id.like(like_kw) |
-            TrainTrend.model_key.like(like_kw) |
-            TrainTrend.model_name.like(like_kw)
-        )
-
-    records = query.order_by(func.max(TrainTrend.created_at).desc()).limit(limit).all()
-    return {
-        "code": 200,
-        "data": [
-            {"train_id": r.train_id, "model_key": r.model_key, "model_name": r.model_name,
-             "total_epochs": r.total_epochs, "best_val_loss": r.best_val_loss,
-             "total_seconds": round(r.total_seconds, 1) if r.total_seconds else 0,
-             "epoch_count": r.epoch_count,
+             "predictions_json": r.predictions_json, "actuals_json": r.actuals_json,
              "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else None}
             for r in records
         ]
@@ -304,45 +300,35 @@ async def list_train_trends(
 
 @router.get("/saved/list")
 async def list_saved_models(model_key: str = Query(None)):
-    """列出所有保存的模型版本"""
-    return {"code": 200, "data": model_manager.list_saved_models(model_key)}
+    result = model_manager.list_saved_models(model_key)
+    return {"code": 200, "data": result}
 
 
 @router.delete("/saved/{model_id}")
-async def delete_saved_model(model_id: str, db: Session = Depends(get_db)):
-    """删除一个保存的模型版本"""
-    # 读取系统配置：是否同时删除本地文件
-    from models.sys_config import SysConfig
-    config = db.query(SysConfig).filter(SysConfig.config_key == "model_delete_local_file").first()
-    delete_local = config and config.config_value.lower() in ("true", "1", "yes")
+async def delete_saved_model(model_id: str):
     try:
-        result = model_manager.delete_saved_model(model_id, delete_local=delete_local)
+        result = model_manager.delete_saved_model(model_id)
         return {"code": 200, "data": result, "msg": "删除成功"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(400, str(e))
 
 
 @router.post("/saved/{model_id}/load")
 async def load_saved_model(model_id: str):
-    """加载一个已保存的模型版本到当前模型"""
     try:
         entry = model_manager.saved_models.get(model_id)
         if not entry:
-            raise HTTPException(status_code=404, detail="模型版本不存在")
-        result = model_manager.load_model_weights(entry["model_key"], model_id)
-        return {"code": 200, "data": result, "msg": "加载成功"}
+            raise HTTPException(404, "模型版本不存在")
+        model_manager.load_model_weights(entry["model_key"], model_id)
+        return {"code": 200, "msg": f"已加载模型 {entry.get('name', model_id)}"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(400, str(e))
 
 
 @router.put("/saved/{model_id}/rename")
-async def rename_saved_model(model_id: str, body: dict):
-    """重命名一个已保存的模型版本"""
-    new_name = body.get("name", "").strip()
-    if not new_name:
-        raise HTTPException(status_code=400, detail="名称不能为空")
+async def rename_saved_model(model_id: str, name: str = Query(...)):
     try:
-        result = model_manager.rename_saved_model(model_id, new_name)
+        result = model_manager.rename_saved_model(model_id, name)
         return {"code": 200, "data": result, "msg": "重命名成功"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(400, str(e))
