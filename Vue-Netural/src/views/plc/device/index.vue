@@ -27,7 +27,7 @@
           </el-tag>
         </div>
         <div class="card-body">
-          <div class="info-row"><span class="label">IP 地址</span><span class="value mono">{{ device.ip }}</span></div>
+          <div class="info-row"><span class="label">IP 地址</span><span class="value mono">{{ device.ip }}<template v-if="device.port">:{{ device.port }}</template></span></div>
           <div class="info-row"><span class="label">机架 / 插槽</span><span class="value">{{ device.rack }} / {{ device.slot }}</span></div>
           <div class="info-row"><span class="label">DB 点位</span><span class="value"><el-tag type="info" size="small">{{ device.point_count }} 个</el-tag></span></div>
           <div class="info-row" v-if="device.remark"><span class="label">备注</span><span class="value remark">{{ device.remark }}</span></div>
@@ -53,6 +53,10 @@
       <el-form :model="form" label-width="100px" :rules="rules" ref="formRef">
         <el-form-item label="设备名称" prop="name"><el-input v-model="form.name" placeholder="如：1号产线PLC" /></el-form-item>
         <el-form-item label="IP 地址" prop="ip"><el-input v-model="form.ip" placeholder="如：192.168.1.10" /></el-form-item>
+        <el-form-item label="端口号">
+          <el-input-number v-model="form.port" :min="0" :max="65535" style="width: 100%" />
+          <div class="form-hint-text">0 = 使用默认端口（不显示端口信息）</div>
+        </el-form-item>
         <el-form-item label="机架号" prop="rack"><el-input-number v-model="form.rack" :min="0" :max="7" style="width: 100%" /></el-form-item>
         <el-form-item label="插槽号" prop="slot"><el-input-number v-model="form.slot" :min="0" :max="31" style="width: 100%" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" placeholder="可选" /></el-form-item>
@@ -118,7 +122,7 @@ const simulateDialogVisible = ref(false)
 const simulateTargetDevice = ref(null)
 const simulateForm = ref({ interval: 1.0, min_val: 0, max_val: 100, pattern: 'random' })
 
-const form = ref({ id: null, name: '', ip: '', rack: 0, slot: 1, remark: '' })
+const form = ref({ id: null, name: '', ip: '', port: 0, rack: 0, slot: 1, remark: '' })
 
 const rules = {
   name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
@@ -141,7 +145,7 @@ function statusText(status) {
 
 function handleAdd() {
   isEdit.value = false
-  form.value = { id: null, name: '', ip: '', rack: 0, slot: 1, remark: '' }
+  form.value = { id: null, name: '', ip: '', port: 0, rack: 0, slot: 1, remark: '' }
   dialogVisible.value = true
 }
 function handleEdit(device) {
@@ -229,4 +233,5 @@ function handleManagePoints(device) {
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid #1e1e2e; padding-top: 14px; }
 .empty-state { grid-column: 1 / -1; display: flex; justify-content: center; padding: 60px 0; }
 .form-hint { margin-left: 8px; font-size: 12px; color: #999; }
+.form-hint-text { font-size: 12px; color: #888; margin-top: 4px; }
 </style>

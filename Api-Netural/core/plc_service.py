@@ -30,11 +30,14 @@ class PlcConnectionManager:
     def available(self) -> bool:
         return self._snap7_available
 
-    def connect(self, device_id: int, ip: str, port: int = 102,
+    def connect(self, device_id: int, ip: str, port: int = 0,
                 rack: int = 0, slot: int = 1) -> dict:
-        """连接 PLC 设备"""
+        """连接 PLC 设备（port=0 时使用默认端口 102）"""
         if not self._snap7_available:
             return {"success": False, "msg": "snap7 库未安装，请执行: pip install python-snap7"}
+
+        # 使用默认端口
+        actual_port = port if port and port > 0 else 102
 
         # 断开已有连接
         self.disconnect(device_id)
@@ -42,10 +45,10 @@ class PlcConnectionManager:
         client = self._snap7.client.Client()
         lock = threading.Lock()
         try:
-            client.connect(ip, rack, slot, port)
+            client.connect(ip, rack, slot, actual_port)
             if client.get_connected():
                 self._connections[device_id] = {"client": client, "lock": lock}
-                logger.info(f"PLC 连接成功: device_id={device_id}, ip={ip}:{port}")
+                logger.info(f"PLC 连接成功: device_id={device_id}, ip={ip}:{actual_port}")
                 return {"success": True, "msg": "连接成功"}
             else:
                 return {"success": False, "msg": "连接失败，无法建立通信"}

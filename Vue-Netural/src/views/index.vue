@@ -96,7 +96,7 @@
               </div>
               <div>
                 <div class="item-name">{{ d.name }}</div>
-                <div class="item-sub mono">{{ d.ip }}:{{ d.port }} · {{ d.point_count || 0 }} 点位</div>
+                <div class="item-sub mono">{{ d.ip }}<template v-if="d.port">:{{ d.port }}</template> · {{ d.point_count || 0 }} 点位</div>
               </div>
             </div>
             <div class="list-right">

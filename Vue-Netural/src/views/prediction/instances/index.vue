@@ -165,7 +165,7 @@
                 <div class="plc-device-option">
                   <span>{{ d.name }}</span>
                   <el-tag :type="d.status === 'connected' ? 'success' : 'info'" size="small">
-                    {{ d.ip }}:{{ d.port }}
+                    {{ d.ip }}<template v-if="d.port">:{{ d.port }}</template>
                   </el-tag>
                 </div>
               </el-option>

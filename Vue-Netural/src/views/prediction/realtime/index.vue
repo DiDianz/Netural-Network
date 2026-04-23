@@ -104,7 +104,7 @@
               <el-tag :type="d.status === 'connected' ? 'success' : 'warning'" size="small">
                 {{ d.status === 'connected' ? '已连接' : '模拟中' }}
               </el-tag>
-              <span class="plc-device-meta">{{ d.ip }}:{{ d.port }}</span>
+              <span class="plc-device-meta">{{ d.ip }}<template v-if="d.port">:{{ d.port }}</template></span>
             </div>
           </el-option>
         </el-select>
