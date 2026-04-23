@@ -12,7 +12,7 @@
         <span class="tag-dot"></span>
         <span>{{ (tag.meta && tag.meta.title) || tag.name }}</span>
         <el-icon
-          v-if="visitedViews.length > 1"
+          v-if="!isAffix(tag)"
           class="close-icon"
           @click.prevent.stop="closeTag(tag)"
         >
@@ -32,6 +32,23 @@ const route = useRoute()
 const router = useRouter()
 const visitedViews = ref([])
 
+// 固定标签页（不可关闭）
+const affixTags = ['/index']
+
+function isAffix(tag) {
+  return affixTags.includes(tag.path)
+}
+
+// 初始化：固定首页
+function initAffixTags() {
+  visitedViews.value.push({
+    path: '/index',
+    name: 'Index',
+    meta: { title: '首页', icon: 'home', affix: true }
+  })
+}
+initAffixTags()
+
 watch(
   () => route.path,
   () => {
@@ -49,6 +66,7 @@ watch(
 )
 
 function closeTag(tag) {
+  if (isAffix(tag)) return
   var index = visitedViews.value.findIndex(function (v) { return v.path === tag.path })
   if (index === -1) return
   visitedViews.value.splice(index, 1)
