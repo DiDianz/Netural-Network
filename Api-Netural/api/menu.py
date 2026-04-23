@@ -112,11 +112,11 @@ def to_sidebar_format(menus: list[SysMenu]) -> list[dict]:
                 "children": [],
             }
             for c in menus:
-                if (c.parent_id or 0) == m.menu_id:
+                if (c.parent_id or 0) == m.menu_id and c.visible == "0":
                     node["children"].append({
                         "name": c.menu_name,
                         "path": c.path,
-                        "hidden": c.visible != "0",
+                        "hidden": False,
                         "meta": {
                             "title": c.menu_name,
                             "icon": c.icon or "",
@@ -133,7 +133,9 @@ async def menu_list(
 ):
     """菜单列表（Sidebar 用）"""
     menus = db.query(SysMenu).filter(
-        SysMenu.status == "0"
+        SysMenu.status == "0",
+        SysMenu.visible == "0",
+        SysMenu.menu_name != "模型训练"
     ).order_by(SysMenu.order_num).all()
     return to_sidebar_format(menus)
 
