@@ -148,27 +148,30 @@
         </el-form-item>
 
         <el-form-item label="PLC 设备" required>
-          <el-select
-            v-model="formData.device_id"
-            placeholder="请选择 PLC 设备"
-            style="width: 100%"
-            filterable
-            :loading="loadingDevices"
-          >
-            <el-option
-              v-for="d in allDevices"
-              :key="d.id"
-              :label="d.name"
-              :value="d.id"
+          <div style="display: flex; gap: 8px; align-items: center; width: 100%">
+            <el-select
+              v-model="formData.device_id"
+              placeholder="请选择 PLC 设备"
+              style="flex: 1"
+              filterable
+              :loading="loadingDevices"
             >
-              <div class="plc-device-option">
-                <span>{{ d.name }}</span>
-                <el-tag :type="d.status === 'connected' ? 'success' : 'info'" size="small">
-                  {{ d.ip }}:{{ d.port }}
-                </el-tag>
-              </div>
-            </el-option>
-          </el-select>
+              <el-option
+                v-for="d in allDevices"
+                :key="d.id"
+                :label="d.name"
+                :value="d.id"
+              >
+                <div class="plc-device-option">
+                  <span>{{ d.name }}</span>
+                  <el-tag :type="d.status === 'connected' ? 'success' : 'info'" size="small">
+                    {{ d.ip }}:{{ d.port }}
+                  </el-tag>
+                </div>
+              </el-option>
+            </el-select>
+            <el-button :icon="Refresh" circle size="default" @click="loadDevices" :loading="loadingDevices" />
+          </div>
         </el-form-item>
 
         <el-form-item label="DB 点位">
@@ -396,7 +399,8 @@ function openDialog(inst = null) {
     formData.interval = 1.0
     formData.point_ids_array = []
   }
-  // 每次打开弹窗都重新加载实例类型，确保与系统设置同步
+  // 每次打开弹窗都刷新设备列表和实例类型，确保数据同步
+  loadDevices()
   loadInstanceTypes()
   dialogVisible.value = true
 }

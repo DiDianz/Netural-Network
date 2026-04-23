@@ -315,14 +315,17 @@
               <template #header>PLC配置</template>
               <el-form :model="plcForm" label-position="top" size="small">
                 <el-form-item label="PLC设备">
-                  <el-select v-model="plcForm.device_id" placeholder="选择设备" style="width: 100%;">
-                    <el-option v-for="d in plcDevices" :key="d.id" :label="d.name + ' (' + d.ip + ')'" :value="d.id">
-                      <span>{{ d.name }}</span>
-                      <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small" style="margin-left: 8px;">
-                        {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟' : '未连接' }}
-                      </el-tag>
-                    </el-option>
-                  </el-select>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <el-select v-model="plcForm.device_id" placeholder="选择设备" style="flex: 1;">
+                      <el-option v-for="d in plcDevices" :key="d.id" :label="d.name + ' (' + d.ip + ')'" :value="d.id">
+                        <span>{{ d.name }}</span>
+                        <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small" style="margin-left: 8px;">
+                          {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟' : '未连接' }}
+                        </el-tag>
+                      </el-option>
+                    </el-select>
+                    <el-button :icon="Refresh" circle size="small" @click="loadPLCDevices" :loading="loadingPlcDevices" />
+                  </div>
                 </el-form-item>
                 <el-form-item label="点位ID (逗号分隔, 留空=全部)">
                   <el-input v-model="plcForm.point_ids" placeholder="1,2,3" />
@@ -519,6 +522,7 @@ const predictHistory = reactive({ preds: [], actuals: [] })
 // PLC
 const plcRunning = ref(false)
 const plcDevices = ref([])
+const loadingPlcDevices = ref(false)
 const plcPrediction = ref(null)
 const plcPointsData = ref([])
 const plcHistory = reactive({ preds: [], ticks: [] })
@@ -897,11 +901,14 @@ function renderPredictChart() {
 
 // ---- PLC ----
 async function loadPLCDevices() {
+  loadingPlcDevices.value = true
   try {
     const res = await getPlcDeviceList()
     plcDevices.value = res.data || []
   } catch (e) {
     console.warn('加载PLC设备失败:', e)
+  } finally {
+    loadingPlcDevices.value = false
   }
 }
 
