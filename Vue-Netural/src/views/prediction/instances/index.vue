@@ -55,7 +55,7 @@
             <span class="ic-label">模型</span>
             <el-tag type="warning" size="small">专用模型</el-tag>
             <el-tag type="info" size="small" effect="plain">
-              {{ instanceTypes.find(t => t.key === inst.instance_type)?.name || '自定义' }}
+              {{ inst.base_model_id || '激活版本' }}
             </el-tag>
           </div>
           <div class="ic-info-row">
@@ -229,7 +229,34 @@
           <el-button size="default" :icon="Refresh" circle style="margin-left: 8px" @click="loadSavedModels" :loading="loadingSavedModels" />
         </el-form-item>
 
-        <el-form-item v-if="formData.instance_type !== 'realtime'" label="模型说明">
+        <el-form-item v-if="formData.instance_type === 'dryer'" label="烘丝机模型" required>
+          <el-select
+            v-model="formData.base_model_id"
+            placeholder="选择已训练的烘丝机模型版本"
+            style="width: 100%"
+            filterable
+            :loading="loadingDryerModels"
+          >
+            <el-option
+              v-for="v in dryerVersions"
+              :key="v.version"
+              :label="v.version + (v.is_active ? ' (当前激活)' : '')"
+              :value="v.version"
+            >
+              <div class="saved-model-option">
+                <span class="smo-name">{{ v.version }} <el-tag v-if="v.is_active" type="success" size="small" effect="plain">激活</el-tag></span>
+                <div class="smo-meta">
+                  <span class="smo-loss">Loss: {{ v.metrics?.best_test_loss ?? '-' }}</span>
+                  <span>R²: {{ v.metrics?.final_r2 ?? '-' }}</span>
+                  <span>{{ v.metrics?.epochs ?? '-' }} 轮</span>
+                </div>
+              </div>
+            </el-option>
+          </el-select>
+          <el-button size="default" :icon="Refresh" circle style="margin-left: 8px" @click="loadDryerVersions" :loading="loadingDryerModels" />
+        </el-form-item>
+
+        <el-form-item v-if="formData.instance_type !== 'realtime' && formData.instance_type !== 'dryer'" label="模型说明">
           <el-text type="info" size="small">
             {{ instanceTypes.find(t => t.key === formData.instance_type)?.desc || '该实例类型使用独立模型，请先完成对应模型训练。' }}
           </el-text>
@@ -271,6 +298,8 @@ const devicePoints = ref([])
 const loadingPoints = ref(false)
 const savedModels = ref([])
 const loadingSavedModels = ref(false)
+const dryerVersions = ref([])
+const loadingDryerModels = ref(false)
 const instanceTypes = ref([
   { key: 'realtime', name: '实时预测[通用]', desc: '通用神经网络实时预测' },
   { key: 'dryer', name: '烘丝机出口水分模型', desc: '烘丝机专用预测模型' }
@@ -303,6 +332,9 @@ function handleTypeChange(val) {
   // 切换类型时重置相关字段
   if (val === 'dryer') {
     formData.model_key = 'lstm'
+    formData.base_model_id = ''
+    loadDryerVersions()
+  } else if (val === 'realtime') {
     formData.base_model_id = ''
   }
 }
@@ -365,6 +397,15 @@ async function loadSavedModels() {
   finally { loadingSavedModels.value = false }
 }
 
+async function loadDryerVersions() {
+  loadingDryerModels.value = true
+  try {
+    const res = await request.get('/dryer/versions')
+    dryerVersions.value = res.data || []
+  } catch (e) { /* ignore */ }
+  finally { loadingDryerModels.value = false }
+}
+
 // 当设备变更时，加载点位
 watch(() => formData.device_id, async (newId) => {
   formData.point_ids_array = []
@@ -402,6 +443,10 @@ function openDialog(inst = null) {
   // 每次打开弹窗都刷新设备列表和实例类型，确保数据同步
   loadDevices()
   loadInstanceTypes()
+  // 如果是烘丝机类型，加载烘丝机模型版本
+  if (formData.instance_type === 'dryer') {
+    loadDryerVersions()
+  }
   dialogVisible.value = true
 }
 
@@ -414,11 +459,16 @@ async function handleSubmit() {
     ElMessage.warning('请选择 PLC 设备')
     return
   }
+  if (formData.instance_type === 'dryer' && !formData.base_model_id) {
+    ElMessage.warning('请选择烘丝机模型版本')
+    return
+  }
 
   // 如果选了已保存模型，用该模型的 model_key；否则用 radio 选的类型
   let modelKey = formData.model_key
   let baseModelId = formData.base_model_id || ''
-  if (baseModelId) {
+  // 只有 realtime 类型才从 savedModels 查找 model_key
+  if (baseModelId && formData.instance_type === 'realtime') {
     const saved = savedModels.value.find(m => m.model_id === baseModelId)
     if (saved) {
       modelKey = saved.model_key

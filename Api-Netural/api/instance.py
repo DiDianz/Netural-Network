@@ -59,6 +59,7 @@ async def list_instances(db: Session = Depends(get_db)):
             "point_names": point_names,
             "model_key": inst.model_key,
             "base_model_id": inst.base_model_id or "",
+            "dryer_model_version": inst.base_model_id if inst.instance_type == "dryer" else "",
             "interval": (inst.interval or 10) / 10.0,
             "order_num": inst.order_num,
             "is_active": inst.is_active,
@@ -124,6 +125,20 @@ async def add_instance(
 
     if instance_type == "realtime" and model_key not in model_manager.models:
         raise HTTPException(400, f"模型不存在: {model_key}")
+
+    if instance_type == "dryer" and not base_model_id:
+        raise HTTPException(400, "烘丝机实例必须选择一个模型版本")
+
+    # 校验烘丝机模型版本是否存在
+    if instance_type == "dryer" and base_model_id:
+        from pathlib import Path
+        import json as _json
+        dryer_dir = Path(__file__).parent.parent / "saved_models" / "dryer"
+        reg_file = dryer_dir / "registry.json"
+        if reg_file.exists():
+            reg = _json.loads(reg_file.read_text())
+            if base_model_id not in reg.get("versions", {}):
+                raise HTTPException(400, f"烘丝机模型版本不存在: {base_model_id}")
 
     # 如果指定了 base_model_id，校验它是否存在且类型匹配
     if base_model_id:
@@ -274,7 +289,8 @@ async def instance_predict_stream(
             raise HTTPException(400, "烘丝机模型未训练，请先在烘丝机页面训练模型")
 
         registry = _json.loads(registry_file.read_text())
-        version = registry.get("active_version")
+        # 优先使用实例指定的模型版本，否则用激活版本
+        version = inst.base_model_id or registry.get("active_version")
         if not version or version not in registry.get("versions", {}):
             raise HTTPException(400, "没有可用的烘丝机训练模型")
 
