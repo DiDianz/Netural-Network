@@ -136,7 +136,7 @@ class ModelManager:
             print(f"保存模型注册表失败: {e}")
 
     def _register_saved_model(self, model_key, epochs, best_val_loss, remark=None, custom_name=None,
-                               schema_id=None, input_dim=None):
+                               schema_id=None, input_dim=None, db=None):
         """训练完成后注册一个保存的模型版本"""
         model_id = str(uuid.uuid4())[:8]
         filename = f"{model_key}_{model_id}.pth"
@@ -166,6 +166,32 @@ class ModelManager:
         }
         self.saved_models[model_id] = entry
         self._save_registry()
+
+        # 同步到数据库
+        if db:
+            try:
+                from models.saved_model import SavedModel
+                record = SavedModel(
+                    model_id=model_id,
+                    model_type="general",
+                    model_key=model_key,
+                    display_name=self.models[model_key]["display_name"],
+                    name=custom_name,
+                    filename=filename,
+                    epochs=epochs,
+                    best_val_loss=round(best_val_loss, 6),
+                    trained_at=datetime.now(),
+                    remark=remark or "",
+                    file_size_kb=round(os.path.getsize(filepath) / 1024, 1) if os.path.exists(filepath) else 0,
+                    schema_id=schema_id or self._schema_id,
+                    input_dim=input_dim or self.input_dim,
+                )
+                db.add(record)
+                db.commit()
+            except Exception as e:
+                print(f"保存模型到数据库失败: {e}")
+                db.rollback()
+
         return entry
 
     def rename_saved_model(self, model_id, new_name):
@@ -175,6 +201,20 @@ class ModelManager:
             raise ValueError("名称不能为空")
         self.saved_models[model_id]["name"] = new_name.strip()
         self._save_registry()
+
+        # 同步到数据库
+        try:
+            from models.saved_model import SavedModel
+            from core.database import SessionLocal
+            _db = SessionLocal()
+            record = _db.query(SavedModel).filter(SavedModel.model_id == model_id).first()
+            if record:
+                record.name = new_name.strip()
+                _db.commit()
+            _db.close()
+        except Exception as e:
+            print(f"重命名模型数据库同步失败: {e}")
+
         return self.saved_models[model_id]
 
     def list_saved_models(self, model_key=None):
@@ -203,6 +243,18 @@ class ModelManager:
             os.remove(filepath)
         del self.saved_models[model_id]
         self._save_registry()
+
+        # 从数据库删除
+        try:
+            from models.saved_model import SavedModel
+            from core.database import SessionLocal
+            _db = SessionLocal()
+            _db.query(SavedModel).filter(SavedModel.model_id == model_id).delete()
+            _db.commit()
+            _db.close()
+        except Exception as e:
+            print(f"从数据库删除模型失败: {e}")
+
         return {"deleted": model_id, "model_key": entry["model_key"]}
 
     def load_model_weights(self, model_key, model_id):
@@ -466,7 +518,7 @@ class ModelManager:
 
             # 注册模型
             self._register_saved_model(model_key, epochs, best_val_loss,
-                                        schema_id=self._schema_id, input_dim=self.input_dim)
+                                        schema_id=self._schema_id, input_dim=self.input_dim, db=db)
             self.models[model_key]["status"] = "ready"
             self.models[model_key]["trained_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -640,7 +692,7 @@ class ModelManager:
             custom_name = model_name or None
             self._register_saved_model(model_key, epochs, best_val_loss,
                                         custom_name=custom_name,
-                                        schema_id=schema_id, input_dim=input_dim)
+                                        schema_id=schema_id, input_dim=input_dim, db=db)
             self.models[model_key]["status"] = "ready"
             self.models[model_key]["trained_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 

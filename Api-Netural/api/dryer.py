@@ -465,6 +465,33 @@ async def train_model(
             registry["active_version"] = version
             _save_registry(registry)
 
+            # 同步到数据库
+            try:
+                from models.saved_model import SavedModel
+                from core.database import SessionLocal
+                _db = SessionLocal()
+                record = SavedModel(
+                    model_id=version,
+                    model_type="dryer",
+                    model_key="dryer",
+                    display_name="烘丝机出口水分模型",
+                    name=version,
+                    filename=f"{version}.pth",
+                    epochs=epochs,
+                    best_val_loss=round(best_loss, 6),
+                    r2=round(r2, 4),
+                    trained_at=datetime.now(),
+                    file_size_kb=round((MODEL_DIR / f"{version}.pth").stat().st_size / 1024, 1) if (MODEL_DIR / f"{version}.pth").exists() else 0,
+                    schema_id="dryer",
+                    input_dim=n_features,
+                    remark=f"active=Y",
+                )
+                _db.add(record)
+                _db.commit()
+                _db.close()
+            except Exception as _e:
+                print(f"烘丝机模型同步到数据库失败: {_e}")
+
             done = {
                 "type": "done",
                 "version": version,
@@ -628,6 +655,18 @@ async def delete_version(version: str):
     model_path = MODEL_DIR / f"{version}.pth"
     if model_path.exists():
         model_path.unlink()
+
+    # 从数据库删除
+    try:
+        from models.saved_model import SavedModel
+        from core.database import SessionLocal
+        _db = SessionLocal()
+        _db.query(SavedModel).filter(SavedModel.model_id == version).delete()
+        _db.commit()
+        _db.close()
+    except Exception as e:
+        print(f"从数据库删除烘丝机模型失败: {e}")
+
     return {"code": 200, "msg": f"已删除版本: {version}"}
 
 

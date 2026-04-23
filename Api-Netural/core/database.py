@@ -102,6 +102,83 @@ def _init_instance_type_flags(db):
         print(f"初始化实例类型标记失败: {e}")
 
 
+def _sync_saved_models_to_db(db):
+    """将本地 registry.json 中的已保存模型同步到数据库"""
+    from models.saved_model import SavedModel
+    from pathlib import Path
+    import json as _json
+    from datetime import datetime
+
+    base_dir = Path(__file__).parent.parent / "saved_models"
+
+    synced = 0
+
+    # 1. 同步通用模型 registry
+    registry_path = base_dir / "registry.json"
+    if registry_path.exists():
+        try:
+            registry = _json.loads(registry_path.read_text())
+            for model_id, info in registry.items():
+                existing = db.query(SavedModel).filter(SavedModel.model_id == model_id).first()
+                if existing:
+                    continue
+                record = SavedModel(
+                    model_id=model_id,
+                    model_type="general",
+                    model_key=info.get("model_key", ""),
+                    display_name=info.get("display_name", ""),
+                    name=info.get("name", ""),
+                    filename=info.get("filename", ""),
+                    epochs=info.get("epochs", 0),
+                    best_val_loss=info.get("best_val_loss", 0),
+                    trained_at=datetime.strptime(info["trained_at"], "%Y-%m-%d %H:%M:%S") if info.get("trained_at") else datetime.now(),
+                    remark=info.get("remark", ""),
+                    file_size_kb=info.get("file_size_kb", 0),
+                    schema_id=info.get("schema_id", "default"),
+                    input_dim=info.get("input_dim", 0),
+                )
+                db.add(record)
+                synced += 1
+        except Exception as e:
+            print(f"同步通用模型注册表失败: {e}")
+
+    # 2. 同步烘丝机模型 registry
+    dryer_registry_path = base_dir / "dryer" / "registry.json"
+    if dryer_registry_path.exists():
+        try:
+            registry = _json.loads(dryer_registry_path.read_text())
+            for version, info in registry.get("versions", {}).items():
+                existing = db.query(SavedModel).filter(SavedModel.model_id == version).first()
+                if existing:
+                    continue
+                metrics = info.get("metrics", {})
+                config = info.get("config", {})
+                record = SavedModel(
+                    model_id=version,
+                    model_type="dryer",
+                    model_key="dryer",
+                    display_name="烘丝机出口水分模型",
+                    name=version,
+                    filename=f"{version}.pth",
+                    epochs=metrics.get("epochs", 0),
+                    best_val_loss=metrics.get("best_test_loss", 0),
+                    r2=metrics.get("final_r2", 0),
+                    trained_at=datetime.fromisoformat(info["created_at"]) if info.get("created_at") else datetime.now(),
+                    file_size_kb=round((base_dir / "dryer" / f"{version}.pth").stat().st_size / 1024, 1) if (base_dir / "dryer" / f"{version}.pth").exists() else 0,
+                    schema_id="dryer",
+                    input_dim=config.get("input_dim", 12),
+                    remark=f"active={'Y' if version == registry.get('active_version') else 'N'}",
+                )
+                db.add(record)
+                synced += 1
+        except Exception as e:
+            print(f"同步烘丝机模型注册表失败: {e}")
+
+    if synced > 0:
+        db.commit()
+        print(f"已同步 {synced} 个模型到数据库")
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -114,6 +191,7 @@ def init_db():
             _migrate_prediction_instance(db)
             _migrate_menu_as_instance_type(db)
             _migrate_plc_port(db)
+            _sync_saved_models_to_db(db)
             return
 
         _init_roles(db)

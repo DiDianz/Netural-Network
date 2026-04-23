@@ -27,6 +27,7 @@ from models.plc_device import PlcDevice      # PLC 设备表
 from models.plc_db_point import PlcDbPoint   # PLC 点位表
 from models.sys_config import SysConfig       # 系统配置表
 from models.prediction_instance import PredictionInstance  # 预测实例表
+from models.saved_model import SavedModel     # 已保存模型表
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
