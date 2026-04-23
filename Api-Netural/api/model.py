@@ -299,8 +299,40 @@ async def get_train_trend(
 # ========== 模型版本管理 ==========
 
 @router.get("/saved/list")
-async def list_saved_models(model_key: str = Query(None)):
-    result = model_manager.list_saved_models(model_key)
+async def list_saved_models(model_key: str = Query(None), db: Session = Depends(get_db)):
+    """从数据库读取所有已保存模型（通用模型 + 烘丝机模型）"""
+    from models.saved_model import SavedModel
+
+    query = db.query(SavedModel)
+    if model_key:
+        query = query.filter(SavedModel.model_key == model_key)
+
+    records = query.order_by(SavedModel.trained_at.desc()).all()
+
+    # 同时更新内存注册表，保持一致
+    result = []
+    for r in records:
+        entry = {
+            "model_id": r.model_id,
+            "model_key": r.model_key,
+            "model_type": r.model_type or "general",
+            "display_name": r.display_name or "",
+            "name": r.name or "",
+            "filename": r.filename or "",
+            "epochs": r.epochs or 0,
+            "best_val_loss": r.best_val_loss or 0,
+            "r2": r.r2 or 0,
+            "trained_at": r.trained_at.strftime("%Y-%m-%d %H:%M:%S") if r.trained_at else "",
+            "remark": r.remark or "",
+            "file_size_kb": r.file_size_kb or 0,
+            "schema_id": r.schema_id or "default",
+            "input_dim": r.input_dim or 0,
+        }
+        result.append(entry)
+        # 同步到内存注册表
+        if r.model_id not in model_manager.saved_models:
+            model_manager.saved_models[r.model_id] = entry
+
     return {"code": 200, "data": result}
 
 

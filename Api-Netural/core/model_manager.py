@@ -167,32 +167,43 @@ class ModelManager:
         self.saved_models[model_id] = entry
         self._save_registry()
 
-        # 同步到数据库
-        if db:
-            try:
-                from models.saved_model import SavedModel
-                record = SavedModel(
-                    model_id=model_id,
-                    model_type="general",
-                    model_key=model_key,
-                    display_name=self.models[model_key]["display_name"],
-                    name=custom_name,
-                    filename=filename,
-                    epochs=epochs,
-                    best_val_loss=round(best_val_loss, 6),
-                    trained_at=datetime.now(),
-                    remark=remark or "",
-                    file_size_kb=round(os.path.getsize(filepath) / 1024, 1) if os.path.exists(filepath) else 0,
-                    schema_id=schema_id or self._schema_id,
-                    input_dim=input_dim or self.input_dim,
-                )
-                db.add(record)
-                db.commit()
-            except Exception as e:
-                print(f"保存模型到数据库失败: {e}")
-                db.rollback()
+        # 同步到数据库（使用独立 session，避免异步训练时原 session 已关闭）
+        self._save_model_to_db(model_id, model_key, custom_name, filename,
+                               epochs, best_val_loss, remark, schema_id, input_dim, filepath)
 
         return entry
+
+    def _save_model_to_db(self, model_id, model_key, custom_name, filename,
+                          epochs, best_val_loss, remark=None, schema_id=None,
+                          input_dim=None, filepath=None):
+        """使用独立 session 将模型保存到数据库"""
+        from core.database import SessionLocal
+        from models.saved_model import SavedModel
+        _db = SessionLocal()
+        try:
+            record = SavedModel(
+                model_id=model_id,
+                model_type="general",
+                model_key=model_key,
+                display_name=self.models[model_key]["display_name"],
+                name=custom_name,
+                filename=filename,
+                epochs=epochs,
+                best_val_loss=round(best_val_loss, 6),
+                trained_at=datetime.now(),
+                remark=remark or "",
+                file_size_kb=round(os.path.getsize(filepath) / 1024, 1) if filepath and os.path.exists(filepath) else 0,
+                schema_id=schema_id or self._schema_id,
+                input_dim=input_dim or self.input_dim,
+            )
+            _db.add(record)
+            _db.commit()
+            print(f"模型已保存到数据库: {model_id} ({model_key})")
+        except Exception as e:
+            print(f"保存模型到数据库失败: {e}")
+            _db.rollback()
+        finally:
+            _db.close()
 
     def rename_saved_model(self, model_id, new_name):
         if model_id not in self.saved_models:
@@ -388,9 +399,11 @@ class ModelManager:
 
     # ========== 数据库保存 ==========
 
-    def _save_train_log(self, model_key, epochs, best_val_loss, elapsed, status, db, remark=None):
+    def _save_train_log(self, model_key, epochs, best_val_loss, elapsed, status, db=None, remark=None):
+        from core.database import SessionLocal
+        from models.train_log import TrainLog
+        _db = SessionLocal()
         try:
-            from models.train_log import TrainLog
             record = TrainLog(
                 model_key=model_key, model_name=self.models[model_key]["display_name"],
                 epoch=epochs, total_epochs=epochs,
@@ -401,17 +414,21 @@ class ModelManager:
                 duration_seconds=round(elapsed, 1),
                 remark=remark or self.training_state.get("message", "")
             )
-            db.add(record)
-            db.commit()
+            _db.add(record)
+            _db.commit()
         except Exception as e:
             print(f"保存训练日志失败: {e}")
-            db.rollback()
+            _db.rollback()
+        finally:
+            _db.close()
 
     def _save_train_trend(self, train_id, model_key, epoch, total_epochs,
                           train_loss, val_loss, best_val_loss, lr, elapsed,
-                          predictions, actuals, db):
+                          predictions, actuals, db=None):
+        from core.database import SessionLocal
+        from models.train_trend import TrainTrend
+        _db = SessionLocal()
         try:
-            from models.train_trend import TrainTrend
             record = TrainTrend(
                 train_id=train_id, model_key=model_key,
                 model_name=self.models[model_key]["display_name"],
@@ -422,11 +439,13 @@ class ModelManager:
                 predictions_json=json.dumps(predictions) if predictions else None,
                 actuals_json=json.dumps(actuals) if actuals else None
             )
-            db.add(record)
-            db.commit()
+            _db.add(record)
+            _db.commit()
         except Exception as e:
             print(f"保存趋势失败 epoch {epoch}: {e}")
-            db.rollback()
+            _db.rollback()
+        finally:
+            _db.close()
 
     # ========== 训练（随机数据） ==========
 

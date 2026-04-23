@@ -85,7 +85,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getSavedModels, deleteSavedModel, loadSavedModel, renameSavedModel } from '../../../api/model'
-import { listVersions, deleteVersion as deleteDryerVersion, activateVersion as activateDryerVersion } from '../../../api/dryer'
+import { deleteVersion as deleteDryerVersion, activateVersion as activateDryerVersion } from '../../../api/dryer'
 
 const router = useRouter()
 
@@ -119,37 +119,16 @@ onMounted(() => { loadSavedModels() })
 async function loadSavedModels() {
   loading.value = true
   try {
-    // 加载原有模型
+    // 从统一接口加载所有模型（通用模型 + 烘丝机模型）
     const res = await getSavedModels()
-    const originalModels = (res.data || []).map(m => ({ ...m, _source: 'original' }))
-
-    // 加载烘丝机模型
-    let dryerModels = []
-    try {
-      const dRes = await listVersions()
-      dryerModels = (dRes.data || []).map(v => ({
-        model_id: v.version,
-        name: v.version,
-        display_name: '烘丝机出口水分',
-        model_key: 'dryer',
-        epochs: v.metrics?.epochs || v.config?.epochs || '-',
-        best_val_loss: v.metrics?.best_test_loss ?? '-',
-        trained_at: v.created_at?.replace('T', ' ').substring(0, 19) || '',
-        remark: `R²: ${v.metrics?.final_r2 ?? '-'} | 隐藏层: ${v.config?.hidden_dim || '-'}`,
-        file_size_kb: '-',
-        is_active: v.is_active,
-        _source: 'dryer'
-      }))
-    } catch {}
-
-    savedModels.value = [...originalModels, ...dryerModels]
+    savedModels.value = (res.data || []).map(m => ({ ...m }))
   } catch (e) { console.error('加载已保存模型失败:', e) }
   finally { loading.value = false }
 }
 
 async function handleLoadModel(row) {
   try {
-    if (row._source === 'dryer') {
+    if (row.model_type === 'dryer' || row.model_key === 'dryer') {
       await activateDryerVersion(row.model_id)
       ElMessage.success(`已激活烘丝机模型: ${row.model_id}`)
     } else {
@@ -162,7 +141,7 @@ async function handleLoadModel(row) {
 
 async function handleDelete(row) {
   try {
-    if (row._source === 'dryer') {
+    if (row.model_type === 'dryer' || row.model_key === 'dryer') {
       await deleteDryerVersion(row.model_id)
     } else {
       await deleteSavedModel(row.model_id)
@@ -173,7 +152,7 @@ async function handleDelete(row) {
 }
 
 function goTrainWith(row) {
-  if (row._source === 'dryer') {
+  if (row.model_type === 'dryer' || row.model_key === 'dryer') {
     router.push({ path: '/prediction/dryer' })
   } else {
     router.push({
