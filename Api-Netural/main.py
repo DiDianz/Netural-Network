@@ -32,6 +32,11 @@ from models.prediction_instance import PredictionInstance  # 预测实例表
 async def lifespan(app: FastAPI):
     print("正在初始化数据库...")
     init_db()
+
+    # 自动插入特征方案菜单
+    from core.feature_schema import init_menu_on_startup
+    init_menu_on_startup()
+
     print("系统启动完成")
     yield
     # 关闭时断开所有 PLC 连接
