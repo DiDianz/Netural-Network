@@ -126,12 +126,15 @@ async def upload_data(file: UploadFile = File(...)):
     # 数据统计
     stats = {}
     for col in required:
-        vals = df[col].values
+        vals = df[col].values.astype(np.float64)
+        def sf(v):
+            f = float(v)
+            return 0.0 if (np.isnan(f) or np.isinf(f)) else round(f, 4)
         stats[col] = {
-            "mean": round(float(vals.mean()), 4),
-            "std": round(float(vals.std()), 4),
-            "min": round(float(vals.min()), 4),
-            "max": round(float(vals.max()), 4),
+            "mean": sf(vals.mean()),
+            "std": sf(vals.std()),
+            "min": sf(vals.min()),
+            "max": sf(vals.max()),
             "count": int(len(vals))
         }
 
@@ -187,6 +190,16 @@ async def analyze_data():
     if data.ndim != 2 or data.shape[1] != len(FEATURE_NAMES) + 1:
         raise HTTPException(400, f"数据维度异常: {data.shape}，期望 (N, {len(FEATURE_NAMES) + 1})")
 
+    def safe_float(v):
+        """将 numpy 值转为安全的 Python float (处理 NaN/Inf)"""
+        f = float(v)
+        if np.isnan(f) or np.isinf(f):
+            return 0.0
+        return f
+
+    def safe_round(v, n=4):
+        return round(safe_float(v), n)
+
     n_features = len(FEATURE_NAMES)
     features = data[:, :n_features].astype(np.float64)
     target = data[:, n_features].astype(np.float64)
@@ -195,34 +208,42 @@ async def analyze_data():
     stats = {}
     all_names = FEATURE_NAMES + [TARGET_NAME]
     for i, name in enumerate(all_names):
-        col = data[:, i]
+        col = data[:, i].astype(np.float64)
         stats[name] = {
-            "mean": round(float(col.mean()), 4),
-            "std": round(float(col.std()), 4),
-            "min": round(float(col.min()), 4),
-            "max": round(float(col.max()), 4),
-            "median": round(float(np.median(col)), 4)
+            "mean": safe_round(col.mean()),
+            "std": safe_round(col.std()),
+            "min": safe_round(col.min()),
+            "max": safe_round(col.max()),
+            "median": safe_round(np.median(col))
         }
 
     # 2. 相关性矩阵 (与 target 的相关性)
     correlations = {}
+    target_std = target.std()
     for i, name in enumerate(FEATURE_NAMES):
-        corr = float(np.corrcoef(features[:, i], target)[0, 1])
-        correlations[name] = round(corr, 4)
+        feat_std = features[:, i].std()
+        if feat_std < 1e-10 or target_std < 1e-10:
+            correlations[name] = 0.0
+        else:
+            corr = np.corrcoef(features[:, i], target)[0, 1]
+            correlations[name] = safe_round(corr)
 
     # 3. 时间序列趋势 (target 随时间变化)
-    trend = target.tolist()
+    trend = [safe_float(v) for v in target]
 
     # 4. 特征重要性 (基于方差贡献)
     variances = features.var(axis=0)
-    var_sum = variances.sum() + 1e-8
-    importance = {name: round(float(v / var_sum), 4) for name, v in zip(FEATURE_NAMES, variances)}
+    var_sum = variances.sum()
+    if var_sum < 1e-10:
+        importance = {name: 0.0 for name in FEATURE_NAMES}
+    else:
+        importance = {name: safe_round(v / var_sum) for name, v in zip(FEATURE_NAMES, variances)}
 
     # 5. 目标值分布 (直方图)
     hist, bin_edges = np.histogram(target, bins=20)
     distribution = {
-        "counts": hist.tolist(),
-        "bins": [round(float(e), 2) for e in bin_edges]
+        "counts": [int(v) for v in hist],
+        "bins": [safe_round(float(e), 2) for e in bin_edges]
     }
 
     return {
@@ -233,7 +254,7 @@ async def analyze_data():
             "trend": trend,
             "importance": importance,
             "distribution": distribution,
-            "total_rows": len(data)
+            "total_rows": int(len(data))
         }
     }
 
