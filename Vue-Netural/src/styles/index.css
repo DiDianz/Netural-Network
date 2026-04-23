@@ -4,6 +4,7 @@
 
 html {
   color-scheme: dark;
+  height: 100%;
 }
 
 * {
@@ -17,8 +18,13 @@ body {
   -webkit-font-smoothing: antialiased;
   background: var(--bg-primary);
   color: var(--text-primary);
+  height: 100%;
   overflow: hidden;
   transition: background 0.4s ease, color 0.3s ease;
+}
+
+#app {
+  height: 100%;
 }
 
 /* ========== 滚动条 ========== */

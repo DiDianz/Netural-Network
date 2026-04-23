@@ -140,7 +140,7 @@ const normalizedMenus = computed(() => {
 <style scoped>
 .sidebar-container {
   width: 220px;
-  height: 100vh;
+  height: 100%;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border-primary);
   display: flex;

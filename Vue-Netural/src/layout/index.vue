@@ -30,8 +30,8 @@ onMounted(async () => {
 <style scoped>
 .app-wrapper {
   display: flex;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background: var(--bg-primary);
   overflow: hidden;
 }
@@ -42,6 +42,6 @@ onMounted(async () => {
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
-  height: 100vh;
+  height: 100%;
 }
 </style>
