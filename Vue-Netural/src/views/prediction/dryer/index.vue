@@ -592,6 +592,12 @@ async function startTraining() {
   const es = new EventSource(`http://localhost:8000/dryer/train?${qs}`)
   es.onmessage = (ev) => {
     const data = JSON.parse(ev.data)
+    if (data.type === 'error') {
+      ElMessage.error(data.msg || '训练失败')
+      training.value = false
+      es.close()
+      return
+    }
     if (data.type === 'progress') {
       trainProgress.value = data
       trainLossHistory.train.push(data.train_loss)

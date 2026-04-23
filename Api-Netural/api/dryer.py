@@ -275,188 +275,199 @@ async def train_model(
     target_range: str = Query("14.0,15.0", description="目标水分范围")
 ):
     """训练模型 — SSE 流式输出训练进度"""
-    # 解析参数
-    parsed_fw = [float(w.strip()) for w in feature_weights.split(',') if w.strip()] if feature_weights else None
-    parsed_tr = [float(x.strip()) for x in target_range.split(',')] if target_range else [14.0, 15.0]
-
-    data_file = MODEL_DIR / "training_data.npy"
-    if not data_file.exists():
-        raise HTTPException(400, "请先上传训练数据")
-
-    data = np.load(data_file, allow_pickle=True)
-    n_features = len(FEATURE_NAMES)
-    features = data[:, :n_features].astype(np.float32)
-    target = data[:, n_features].astype(np.float32)
-
-    # 标准化
-    features_norm, feat_stats = _normalize(features)
-    target_norm, tgt_stats = _normalize(target.reshape(-1, 1))
-
-    # 创建序列
-    X, y = _create_sequences(features_norm, target_norm.squeeze(), window_size)
-
-    # 训练/测试划分
-    split = int(len(X) * (1 - test_ratio))
-    X_train, X_test = X[:split], X[split:]
-    y_train, y_test = y[:split], y[split:]
-
-    # 转 Tensor
-    train_ds = TensorDataset(
-        torch.tensor(X_train), torch.tensor(y_train).unsqueeze(-1)
-    )
-    test_ds = TensorDataset(
-        torch.tensor(X_test), torch.tensor(y_test).unsqueeze(-1)
-    )
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_ds, batch_size=batch_size)
-
-    # 构建模型
-    model = DryerModel(
-        input_dim=n_features,
-        hidden_dim=hidden_dim,
-        num_layers=num_layers,
-        dropout=dropout
-    )
-
-    # 设置初始特征权重
-    if parsed_fw and len(parsed_fw) == n_features:
-        with torch.no_grad():
-            model.feature_weights.data = torch.tensor(
-                [max(0.01, min(0.99, w)) for w in parsed_fw],
-                dtype=torch.float32
-            )
-            # 反 sigmoid 映射
-            model.feature_weights.data = torch.log(
-                model.feature_weights.data / (1 - model.feature_weights.data)
-            )
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    mse_loss = nn.MSELoss()
-    l1_loss = nn.L1Loss()
-
-    # 版本号
-    version = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
     async def event_generator():
-        best_loss = float('inf')
-        train_losses = []
-        test_losses = []
+        try:
+            # ---- 解析参数 ----
+            parsed_fw = [float(w.strip()) for w in feature_weights.split(',') if w.strip()] if feature_weights else None
+            parsed_tr = [float(x.strip()) for x in target_range.split(',')] if target_range else [14.0, 15.0]
 
-        for epoch in range(1, epochs + 1):
-            # ---- Train ----
-            model.train()
-            train_loss = 0
-            for xb, yb in train_loader:
-                xb, yb = xb.to(device), yb.to(device)
-                pred, unc = model(xb)
-                loss = mse_loss(pred, yb) + 0.1 * torch.mean(unc)
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-                train_loss += loss.item() * len(xb)
-            train_loss /= len(train_ds)
-            train_losses.append(train_loss)
+            data_file = MODEL_DIR / "training_data.npy"
+            if not data_file.exists():
+                yield f"data: {json.dumps({'type': 'error', 'msg': '请先上传训练数据'})}\n\n"
+                return
 
-            # ---- Eval ----
-            model.eval()
-            test_loss = 0
-            preds_all, targets_all = [], []
-            with torch.no_grad():
-                for xb, yb in test_loader:
+            data = np.load(data_file, allow_pickle=True)
+            n_features = len(FEATURE_NAMES)
+            features = data[:, :n_features].astype(np.float32)
+            target = data[:, n_features].astype(np.float32)
+
+            # 标准化
+            features_norm, feat_stats = _normalize(features)
+            target_norm, tgt_stats = _normalize(target.reshape(-1, 1))
+
+            # 创建序列
+            X, y = _create_sequences(features_norm, target_norm.squeeze(), window_size)
+
+            if len(X) < 10:
+                yield f"data: {json.dumps({'type': 'error', 'msg': f'数据量不足: 仅 {len(X)} 个序列，请减小窗口大小或增加数据量'})}\n\n"
+                return
+
+            # 训练/测试划分
+            split = int(len(X) * (1 - test_ratio))
+            X_train, X_test = X[:split], X[split:]
+            y_train, y_test = y[:split], y[split:]
+
+            # 转 Tensor
+            train_ds = TensorDataset(
+                torch.tensor(X_train), torch.tensor(y_train).unsqueeze(-1)
+            )
+            test_ds = TensorDataset(
+                torch.tensor(X_test), torch.tensor(y_test).unsqueeze(-1)
+            )
+            train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+            test_loader = DataLoader(test_ds, batch_size=batch_size)
+
+            # 构建模型
+            model = DryerModel(
+                input_dim=n_features,
+                hidden_dim=hidden_dim,
+                num_layers=num_layers,
+                dropout=dropout
+            )
+
+            # 设置初始特征权重
+            if parsed_fw and len(parsed_fw) == n_features:
+                with torch.no_grad():
+                    model.feature_weights.data = torch.tensor(
+                        [max(0.01, min(0.99, w)) for w in parsed_fw],
+                        dtype=torch.float32
+                    )
+                    model.feature_weights.data = torch.log(
+                        model.feature_weights.data / (1 - model.feature_weights.data)
+                    )
+
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = model.to(device)
+
+            optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+            mse_loss = nn.MSELoss()
+
+            # 版本号
+            version = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+
+            best_loss = float('inf')
+            train_losses = []
+            test_losses = []
+
+            for epoch in range(1, epochs + 1):
+                # ---- Train ----
+                model.train()
+                train_loss = 0
+                for xb, yb in train_loader:
                     xb, yb = xb.to(device), yb.to(device)
                     pred, unc = model(xb)
-                    test_loss += mse_loss(pred, yb).item() * len(xb)
-                    preds_all.append(pred.cpu().numpy())
-                    targets_all.append(yb.cpu().numpy())
-            test_loss /= len(test_ds)
-            test_losses.append(test_loss)
+                    loss = mse_loss(pred, yb) + 0.1 * torch.mean(unc)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
+                    train_loss += loss.item() * len(xb)
+                train_loss /= len(train_ds)
+                train_losses.append(train_loss)
 
-            scheduler.step()
+                # ---- Eval ----
+                model.eval()
+                test_loss = 0
+                preds_all, targets_all = [], []
+                with torch.no_grad():
+                    for xb, yb in test_loader:
+                        xb, yb = xb.to(device), yb.to(device)
+                        pred, unc = model(xb)
+                        test_loss += mse_loss(pred, yb).item() * len(xb)
+                        preds_all.append(pred.cpu().numpy())
+                        targets_all.append(yb.cpu().numpy())
+                test_loss /= len(test_ds)
+                test_losses.append(test_loss)
 
-            # R² 计算
-            preds_np = np.concatenate(preds_all).flatten()
-            targets_np = np.concatenate(targets_all).flatten()
-            ss_res = np.sum((targets_np - preds_np) ** 2)
-            ss_tot = np.sum((targets_np - targets_np.mean()) ** 2)
-            r2 = 1 - ss_res / (ss_tot + 1e-8)
+                scheduler.step()
 
-            # 保存最优
-            if test_loss < best_loss:
-                best_loss = test_loss
-                save_path = MODEL_DIR / f"{version}.pth"
-                torch.save({
-                    'model_state': model.state_dict(),
-                    'config': {
-                        'input_dim': n_features,
-                        'hidden_dim': hidden_dim,
-                        'num_layers': num_layers,
-                        'dropout': dropout,
-                        'window_size': window_size
-                    },
-                    'normalize_stats': {'features': feat_stats, 'target': tgt_stats},
-                    'feature_names': FEATURE_NAMES,
-                    'target_name': TARGET_NAME,
-                    'metrics': {
-                        'best_test_loss': best_loss,
-                        'r2': float(r2),
-                        'epoch': epoch
-                    }
-                }, save_path)
+                # R² 计算
+                preds_np = np.concatenate(preds_all).flatten()
+                targets_np = np.concatenate(targets_all).flatten()
+                ss_res = np.sum((targets_np - preds_np) ** 2)
+                ss_tot = np.sum((targets_np - targets_np.mean()) ** 2)
+                r2 = float(1 - ss_res / (ss_tot + 1e-8))
 
-            # 进度推送
-            progress = {
-                "type": "progress",
-                "epoch": epoch,
-                "total_epochs": epochs,
-                "train_loss": round(train_loss, 6),
-                "test_loss": round(test_loss, 6),
-                "r2": round(float(r2), 4),
-                "lr": round(scheduler.get_last_lr()[0], 7),
-                "best_loss": round(best_loss, 6),
-                "feature_weights": model.get_feature_weights()
+                # 保存最优
+                if test_loss < best_loss:
+                    best_loss = test_loss
+                    save_path = MODEL_DIR / f"{version}.pth"
+                    torch.save({
+                        'model_state': model.state_dict(),
+                        'config': {
+                            'input_dim': n_features,
+                            'hidden_dim': hidden_dim,
+                            'num_layers': num_layers,
+                            'dropout': dropout,
+                            'window_size': window_size
+                        },
+                        'normalize_stats': {'features': feat_stats, 'target': tgt_stats},
+                        'feature_names': FEATURE_NAMES,
+                        'target_name': TARGET_NAME,
+                        'metrics': {
+                            'best_test_loss': best_loss,
+                            'r2': r2,
+                            'epoch': epoch
+                        }
+                    }, save_path)
+
+                # 进度推送
+                progress = {
+                    "type": "progress",
+                    "epoch": epoch,
+                    "total_epochs": epochs,
+                    "train_loss": round(train_loss, 6),
+                    "test_loss": round(test_loss, 6),
+                    "r2": round(r2, 4),
+                    "lr": round(scheduler.get_last_lr()[0], 7),
+                    "best_loss": round(best_loss, 6),
+                    "feature_weights": model.get_feature_weights()
+                }
+                yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+
+            # 训练完成 — 注册版本
+            registry = _load_registry()
+            registry["versions"][version] = {
+                "created_at": datetime.now().isoformat(),
+                "metrics": {
+                    "best_test_loss": round(best_loss, 6),
+                    "final_r2": round(r2, 4),
+                    "epochs": epochs
+                },
+                "config": {
+                    "hidden_dim": hidden_dim,
+                    "num_layers": num_layers,
+                    "dropout": dropout,
+                    "window_size": window_size,
+                    "learning_rate": learning_rate,
+                    "batch_size": batch_size,
+                    "target_range": parsed_tr
+                },
+                "feature_weights": model.get_feature_weights(),
+                "normalize_stats": {'features': feat_stats, 'target': tgt_stats}
             }
-            yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+            registry["active_version"] = version
+            _save_registry(registry)
 
-        # 训练完成 — 注册版本
-        registry = _load_registry()
-        registry["versions"][version] = {
-            "created_at": datetime.now().isoformat(),
-            "metrics": {
+            done = {
+                "type": "done",
+                "version": version,
                 "best_test_loss": round(best_loss, 6),
-                "final_r2": round(float(r2), 4),
-                "epochs": epochs
-            },
-            "config": {
-                "hidden_dim": hidden_dim,
-                "num_layers": num_layers,
-                "dropout": dropout,
-                "window_size": window_size,
-                "learning_rate": learning_rate,
-                "batch_size": batch_size,
-                "target_range": parsed_tr
-            },
-            "feature_weights": model.get_feature_weights(),
-            "normalize_stats": {'features': feat_stats, 'target': tgt_stats}
-        }
-        registry["active_version"] = version
-        _save_registry(registry)
+                "final_r2": round(r2, 4),
+                "train_losses": [round(l, 6) for l in train_losses],
+                "test_losses": [round(l, 6) for l in test_losses],
+                "feature_weights": model.get_feature_weights(),
+                "msg": f"训练完成! 版本: {version}, R²={round(r2, 4)}"
+            }
+            yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
 
-        done = {
-            "type": "done",
-            "version": version,
-            "best_test_loss": round(best_loss, 6),
-            "final_r2": round(float(r2), 4),
-            "train_losses": [round(l, 6) for l in train_losses],
-            "test_losses": [round(l, 6) for l in test_losses],
-            "feature_weights": model.get_feature_weights(),
-            "msg": f"训练完成! 版本: {version}, R²={round(float(r2), 4)}"
-        }
-        yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"训练错误: {tb}")
+            yield f"data: {json.dumps({'type': 'error', 'msg': f'训练失败: {str(e)}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),
