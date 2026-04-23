@@ -12,9 +12,9 @@ export const usePermissionStore = defineStore('permission', {
         const { getMenuList } = await import('../api/menu')
         const res = await getMenuList()
         let apiMenus = res.data || res || []
-        // 过滤掉首页（侧边栏已硬编码），再合并默认菜单
+        // 过滤掉首页（侧边栏已硬编码），数据库为菜单唯一来源
         apiMenus = apiMenus.filter(m => m.path !== '/index')
-        this.sidebarMenus = mergeDefaultMenus(apiMenus)
+        this.sidebarMenus = apiMenus
       } catch (error) {
         console.warn('获取菜单失败，使用默认菜单:', error)
         this.sidebarMenus = getDefaultMenus()
@@ -27,33 +27,7 @@ export const usePermissionStore = defineStore('permission', {
   }
 })
 
-function mergeDefaultMenus(apiMenus) {
-  const defaults = getDefaultMenus()
-
-  // 收集所有 API 菜单的父级路径
-  const apiParentPaths = new Set(apiMenus.map(m => m.path))
-
-  // 对于 API 中已存在的父级菜单，检查并补充缺失的子菜单
-  for (const dm of defaults) {
-    const existing = apiMenus.find(m => m.path === dm.path)
-    if (existing) {
-      // 父级已存在，合并缺失的子菜单
-      const childPaths = new Set((existing.children || []).map(c => c.path))
-      for (const dc of (dm.children || [])) {
-        if (!childPaths.has(dc.path)) {
-          if (!existing.children) existing.children = []
-          existing.children.push(dc)
-        }
-      }
-    } else {
-      // 父级不存在，整体加入
-      apiMenus.push(dm)
-    }
-  }
-
-  return apiMenus
-}
-
+// 仅作为 API 不可用时的兜底，正常情况不使用
 function getDefaultMenus() {
   return [
     {

@@ -125,6 +125,12 @@ def _init_menus(db):
         SysMenu(menu_id=24, menu_name="已保存模型", parent_id=2, order_num=5,
                 path="saved-models", component="prediction/saved-models/index", menu_type="C",
                 visible="0", status="0", icon="folder"),
+        SysMenu(menu_id=25, menu_name="烘丝机出口水分模型", parent_id=2, order_num=7,
+                path="dryer", component="prediction/dryer/index", menu_type="C",
+                visible="0", status="0", icon="trend-charts"),
+        SysMenu(menu_id=26, menu_name="预测实例管理", parent_id=2, order_num=6,
+                path="instances", component="prediction/instances/index", menu_type="C",
+                visible="0", status="0", icon="list"),
 
         # PLC管理子菜单
         SysMenu(menu_id=31, menu_name="PLC设备管理", parent_id=3, order_num=1,
@@ -189,6 +195,14 @@ def _migrate_menus(db):
                 new_menus.append(SysMenu(menu_name="预测实例管理", parent_id=prediction_parent.menu_id, order_num=6,
                     path="instances", component="prediction/instances/index", menu_type="C",
                     visible="0", status="0", icon="list"))
+
+        # 烘丝机出口水分模型菜单（如果不存在）
+        if "烘丝机出口水分模型" not in existing_names:
+            prediction_parent = existing_names.get("神经网络预测")
+            if prediction_parent:
+                new_menus.append(SysMenu(menu_name="烘丝机出口水分模型", parent_id=prediction_parent.menu_id, order_num=7,
+                    path="dryer", component="prediction/dryer/index", menu_type="C",
+                    visible="0", status="0", icon="trend-charts"))
 
         if new_menus:
             db.add_all(new_menus)
