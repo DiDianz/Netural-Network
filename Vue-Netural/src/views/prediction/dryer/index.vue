@@ -41,6 +41,17 @@
           </el-button>
         </div>
 
+        <!-- 特征方案选择 + 模板下载 -->
+        <div style="margin-top: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <el-select v-model="selectedSchemaId" placeholder="选择特征方案" size="small" style="width: 200px">
+            <el-option v-for="s in schemaList" :key="s.id"
+              :label="`${s.name} (${s.feature_count}个特征)`" :value="s.id" />
+          </el-select>
+          <el-button type="primary" plain size="small" @click="handleDownloadTemplate('csv')">下载 CSV 模板</el-button>
+          <el-button type="success" plain size="small" @click="handleDownloadTemplate('xlsx')">下载 Excel 模板</el-button>
+        </div>
+        <UploadTemplateHelper :schema-id="selectedSchemaId" style="margin-top: 8px;" />
+
         <div v-if="analysisData" class="analysis-content">
           <!-- 统计卡片 -->
           <el-row :gutter="16" class="stat-cards">
@@ -427,8 +438,25 @@ import {
   uploadDryerData, analyzeData, getWeights, updateWeights,
   listVersions, activateVersion, deleteVersion, evaluateModel, predict
 } from '@/api/dryer'
+import { listSchemas } from '@/api/feature'
+import { downloadTemplate } from '@/api/model'
+import UploadTemplateHelper from '@/components/UploadTemplateHelper.vue'
 import { getPlcDeviceList } from '@/api/plc'
 import request from '@/api/request'
+
+// 特征方案
+const schemaList = ref([])
+const selectedSchemaId = ref('default')
+
+async function loadSchemas() {
+  const res = await listSchemas()
+  schemaList.value = res.data || []
+}
+loadSchemas()
+
+function handleDownloadTemplate(format) {
+  downloadTemplate(format, selectedSchemaId.value)
+}
 
 // ---- 常量 ----
 const FEATURE_NAMES = [
