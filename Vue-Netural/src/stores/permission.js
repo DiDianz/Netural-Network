@@ -29,32 +29,29 @@ export const usePermissionStore = defineStore('permission', {
 
 function mergeDefaultMenus(apiMenus) {
   const defaults = getDefaultMenus()
-  const apiPathMap = new Map(apiMenus.map(m => [m.path, m]))
 
-  const result = []
+  // 收集所有 API 菜单的父级路径
+  const apiParentPaths = new Set(apiMenus.map(m => m.path))
 
-  // 先加所有 API 菜单
-  for (const am of apiMenus) {
-    result.push(am)
-  }
-
-  // 合并默认菜单：父级已存在则合并子菜单，否则整体加入
+  // 对于 API 中已存在的父级菜单，检查并补充缺失的子菜单
   for (const dm of defaults) {
-    const existing = apiPathMap.get(dm.path)
+    const existing = apiMenus.find(m => m.path === dm.path)
     if (existing) {
       // 父级已存在，合并缺失的子菜单
       const childPaths = new Set((existing.children || []).map(c => c.path))
       for (const dc of (dm.children || [])) {
         if (!childPaths.has(dc.path)) {
+          if (!existing.children) existing.children = []
           existing.children.push(dc)
         }
       }
     } else {
-      result.push(dm)
+      // 父级不存在，整体加入
+      apiMenus.push(dm)
     }
   }
 
-  return result
+  return apiMenus
 }
 
 function getDefaultMenus() {
