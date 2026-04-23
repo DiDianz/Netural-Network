@@ -13,6 +13,13 @@
         </el-tag>
         <span class="instance-name">{{ instanceConfig.name }}</span>
         <span class="instance-device">→ {{ instanceConfig.device_name || `设备#${instanceConfig.device_id}` }}</span>
+        <el-tag
+          :type="plcStatusType(instanceConfig.plc_status)"
+          size="small"
+          effect="dark"
+        >
+          {{ plcStatusLabel(instanceConfig.plc_status) }}
+        </el-tag>
         <div class="instance-points" v-if="instancePointInfo.length > 0">
           <el-tag
             v-for="p in instancePointInfo.slice(0, 5)"
@@ -148,13 +155,21 @@
         <el-tag size="small" type="info" style="margin-left: 8px">
           {{ instanceConfig.name }} · {{ instancePointInfo.length }} 个点位
         </el-tag>
+        <el-tag
+          :type="plcStatusType(instanceConfig.plc_status)"
+          size="small"
+          effect="dark"
+          style="margin-left: 4px"
+        >
+          {{ plcStatusLabel(instanceConfig.plc_status) }}
+        </el-tag>
       </div>
       <el-table :data="instancePointInfo" size="small" stripe style="width: 100%">
         <el-table-column prop="point_name" label="点位名称" min-width="140" />
         <el-table-column prop="db_number" label="DB编号" width="90" align="center" />
         <el-table-column prop="start_address" label="起始地址" width="90" align="center" />
         <el-table-column prop="data_type" label="数据类型" width="100" align="center" />
-        <el-table-column label="实时值" width="120" align="center">
+        <el-table-column :label="pointValueLabel" width="120" align="center">
           <template #default="{ row }">
             <span class="mono-value" :class="{ 'value-ok': row.current_value != null }">
               {{ row.current_value != null ? row.current_value : '—' }}
@@ -265,6 +280,23 @@ const isInstanceMode = computed(() => !!route.params.id)
 const instanceConfig = ref({})
 const plcLiveValues = ref([])
 const instancePointInfo = ref([]) // 实例模式下的点位信息
+let instanceValuesTimer = null
+
+// 点位值列名：根据 PLC 状态动态变化
+const pointValueLabel = computed(() => {
+  const status = instanceConfig.value.plc_status
+  if (status === 'simulated') return '模拟值'
+  if (status === 'connected') return '实际值'
+  return '实时值'
+})
+
+function plcStatusType(status) {
+  return { connected: 'success', simulated: 'warning', disconnected: 'info' }[status] || 'info'
+}
+
+function plcStatusLabel(status) {
+  return { connected: 'PLC已连接', simulated: 'PLC模拟中', disconnected: 'PLC未连接' }[status] || 'PLC未连接'
+}
 
 // ========== 独立模式 ==========
 const selectedModelKey = ref('lstm')
@@ -351,39 +383,80 @@ onMounted(async () => {
 onUnmounted(() => {
   stopStream()
   clearInterval(valuesTimer)
+  clearInterval(instanceValuesTimer)
 })
 
 // ========== 实例模式：加载配置 ==========
 async function loadInstanceConfig() {
   try {
     const res = await getInstanceDetail(route.params.id)
-    instanceConfig.value = res.data || {}
-    interval.value = instanceConfig.value.interval || 1.0
+    const data = res.data || {}
+    instanceConfig.value = data
+    interval.value = data.interval || 1.0
 
     // 加载实例绑定的点位信息
-    const deviceId = instanceConfig.value.device_id
+    const deviceId = data.device_id
     if (deviceId) {
       const params = { device_id: deviceId, is_active: 1 }
       const pointRes = await getPlcPointList(params)
       let allPoints = pointRes.data || []
 
       // 如果实例指定了点位 ID，则过滤
-      if (instanceConfig.value.point_ids) {
-        const pids = instanceConfig.value.point_ids.split(',').map(Number).filter(n => !isNaN(n))
+      if (data.point_ids) {
+        const pids = data.point_ids.split(',').map(Number).filter(n => !isNaN(n))
         if (pids.length > 0) {
           allPoints = allPoints.filter(p => pids.includes(p.id))
         }
       }
 
+      // 合并点位详情和实时值
+      const valueMap = {}
+      if (data.point_values) {
+        data.point_values.forEach(v => {
+          if (v.success && v.value != null) {
+            valueMap[v.point_id || v.id] = v.value
+          }
+        })
+      }
+
       instancePointInfo.value = allPoints.map(p => ({
         ...p,
-        current_value: null
+        current_value: valueMap[p.id] ?? null
       }))
+
+      // 启动定时刷新点位值
+      startInstanceValuesTimer()
     }
   } catch (e) {
     ElMessage.error('加载实例配置失败')
     router.push('/prediction/instances')
   }
+}
+
+// 定时刷新实例点位值
+async function refreshInstancePointValues() {
+  const deviceId = instanceConfig.value.device_id
+  if (!deviceId) return
+  try {
+    const pointIds = instanceConfig.value.point_ids || ''
+    const res = await readPlcBatch(deviceId, pointIds)
+    const data = res.data || []
+    const valueMap = {}
+    data.forEach(item => {
+      if (item.success && item.value != null) {
+        valueMap[item.point_id || item.id] = item.value
+      }
+    })
+    instancePointInfo.value = instancePointInfo.value.map(p => ({
+      ...p,
+      current_value: valueMap[p.id] ?? p.current_value
+    }))
+  } catch (e) { /* ignore */ }
+}
+
+function startInstanceValuesTimer() {
+  clearInterval(instanceValuesTimer)
+  instanceValuesTimer = setInterval(refreshInstancePointValues, 2000)
 }
 
 function goToInstanceList() {

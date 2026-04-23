@@ -29,11 +29,11 @@
               {{ instanceTypes.find(t => t.key === inst.instance_type)?.name || inst.instance_type }}
             </el-tag>
             <el-tag
-              :type="inst.device_connected ? 'success' : 'info'"
+              :type="plcStatusType(inst.plc_status)"
               size="small"
               effect="dark"
             >
-              {{ inst.device_connected ? 'PLC已连接' : 'PLC未连接' }}
+              {{ plcStatusLabel(inst.plc_status) }}
             </el-tag>
           </div>
         </div>
@@ -326,6 +326,14 @@ const formData = reactive({
 
 function modelTagType(key) {
   return { lstm: '', gru: 'success', transformer: 'warning' }[key] || 'info'
+}
+
+function plcStatusType(status) {
+  return { connected: 'success', simulated: 'warning', disconnected: 'info' }[status] || 'info'
+}
+
+function plcStatusLabel(status) {
+  return { connected: 'PLC已连接', simulated: 'PLC模拟中', disconnected: 'PLC未连接' }[status] || 'PLC未连接'
 }
 
 function handleTypeChange(val) {

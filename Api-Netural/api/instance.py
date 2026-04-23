@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.model_manager import model_manager
 from core.plc_service import plc_manager
+from core.plc_simulator import plc_simulator
 from models.prediction_instance import PredictionInstance
 from models.plc_db_point import PlcDbPoint
 
@@ -35,7 +36,16 @@ async def list_instances(db: Session = Depends(get_db)):
         from models.plc_device import PlcDevice
         device = db.query(PlcDevice).filter(PlcDevice.id == inst.device_id).first()
         device_name = device.name if device else f"设备#{inst.device_id}"
-        device_connected = plc_manager.is_connected(inst.device_id) if device else False
+
+        # 检查 PLC 状态：模拟 > 已连接 > 未连接
+        is_simulating = plc_simulator.is_simulating(inst.device_id)
+        is_connected = plc_manager.is_connected(inst.device_id)
+        if is_simulating:
+            plc_status = "simulated"
+        elif is_connected:
+            plc_status = "connected"
+        else:
+            plc_status = "disconnected"
 
         # 获取点位名称列表
         point_names = []
@@ -54,7 +64,8 @@ async def list_instances(db: Session = Depends(get_db)):
             "instance_type": inst.instance_type or "realtime",
             "device_id": inst.device_id,
             "device_name": device_name,
-            "device_connected": device_connected,
+            "device_connected": is_connected or is_simulating,
+            "plc_status": plc_status,
             "point_ids": inst.point_ids or "",
             "point_names": point_names,
             "model_key": inst.model_key,
@@ -91,14 +102,58 @@ async def get_instance(instance_id: int = Query(...), db: Session = Depends(get_
     device = db.query(PlcDevice).filter(PlcDevice.id == inst.device_id).first()
     device_name = device.name if device else f"设备#{inst.device_id}"
 
+    # 检查 PLC 状态
+    is_simulating = plc_simulator.is_simulating(inst.device_id)
+    is_connected = plc_manager.is_connected(inst.device_id)
+    if is_simulating:
+        plc_status = "simulated"
+    elif is_connected:
+        plc_status = "connected"
+    else:
+        plc_status = "disconnected"
+
+    # 读取点位实时值
+    point_values = []
+    point_list = []
+    if point_names:
+        pids = [int(x.strip()) for x in inst.point_ids.split(",") if x.strip()] if inst.point_ids else []
+        if pids:
+            pts = db.query(PlcDbPoint).filter(PlcDbPoint.id.in_(pids)).all()
+            point_list = [{
+                "id": p.id, "point_name": p.point_name,
+                "db_number": p.db_number, "start_address": p.start_address,
+                "data_type": p.data_type, "bit_index": p.bit_index
+            } for p in pts]
+    else:
+        pts = db.query(PlcDbPoint).filter(
+            PlcDbPoint.device_id == inst.device_id, PlcDbPoint.is_active == 1
+        ).all()
+        point_list = [{
+            "id": p.id, "point_name": p.point_name,
+            "db_number": p.db_number, "start_address": p.start_address,
+            "data_type": p.data_type, "bit_index": p.bit_index
+        } for p in pts]
+
+    if point_list:
+        if is_simulating:
+            read_result = plc_simulator.read_multiple(inst.device_id, point_list)
+        elif is_connected:
+            read_result = plc_manager.read_multiple(inst.device_id, point_list)
+        else:
+            read_result = {"success": False, "data": []}
+        if read_result.get("success"):
+            point_values = read_result["data"]
+
     return {"code": 200, "data": {
         "id": inst.id,
         "name": inst.name,
         "instance_type": inst.instance_type or "realtime",
         "device_id": inst.device_id,
         "device_name": device_name,
+        "plc_status": plc_status,
         "point_ids": inst.point_ids or "",
         "point_names": point_names,
+        "point_values": point_values,
         "model_key": inst.model_key,
         "base_model_id": inst.base_model_id or "",
         "interval": (inst.interval or 10) / 10.0,
