@@ -327,8 +327,11 @@ async def instance_predict_stream(
     device_id = inst.device_id
     interval = (inst.interval or 10) / 10.0
 
-    if not plc_manager.is_connected(device_id):
-        raise HTTPException(400, f"PLC 设备 {device_id} 未连接")
+    # 检查 PLC 状态：模拟 或 已连接 均可
+    is_simulating = plc_simulator.is_simulating(device_id)
+    is_connected = plc_manager.is_connected(device_id)
+    if not is_simulating and not is_connected:
+        raise HTTPException(400, f"PLC 设备 {device_id} 未连接或未启动模拟")
 
     # 获取点位
     query_pts = db.query(PlcDbPoint).filter(
@@ -396,7 +399,11 @@ async def instance_predict_stream(
                     tick += 1
                     timestamp = time.time()
 
-                    plc_result = plc_manager.read_multiple(device_id, point_list)
+                    # 根据 PLC 状态选择数据源
+                    if is_simulating:
+                        plc_result = plc_simulator.read_multiple(device_id, point_list)
+                    else:
+                        plc_result = plc_manager.read_multiple(device_id, point_list)
                     if not plc_result["success"]:
                         yield f"data: {json.dumps({'error': plc_result['msg'], 'tick': tick}, ensure_ascii=False)}\n\n"
                         await asyncio.sleep(interval)
@@ -484,7 +491,11 @@ async def instance_predict_stream(
                 tick += 1
                 timestamp = time.time()
 
-                plc_result = plc_manager.read_multiple(device_id, point_list)
+                # 根据 PLC 状态选择数据源
+                if is_simulating:
+                    plc_result = plc_simulator.read_multiple(device_id, point_list)
+                else:
+                    plc_result = plc_manager.read_multiple(device_id, point_list)
                 if not plc_result["success"]:
                     yield f"data: {json.dumps({'error': plc_result['msg'], 'tick': tick}, ensure_ascii=False)}\n\n"
                     await asyncio.sleep(interval)
