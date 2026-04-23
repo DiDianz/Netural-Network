@@ -42,14 +42,20 @@
     <div class="upload-section" v-if="trainMode === 'uploaded'">
       <div class="upload-header">
         <h3>数据上传</h3>
-        <div class="template-actions">
-          <el-button type="primary" plain size="small" @click="handleDownloadTemplate('csv')">下载 CSV 模板</el-button>
-          <el-button type="success" plain size="small" @click="handleDownloadTemplate('xlsx')">下载 Excel 模板</el-button>
-        </div>
       </div>
-      <div class="template-hint">
-        模板包含 11 个特征列 + out_moist（目标）+ brandID（品牌标识）。相同 brandID 的数据为一组，基于特征变化预测 out_moist。
+      <!-- 特征方案选择 -->
+      <div style="margin: 12px 0;">
+        <span class="selector-label">特征方案:</span>
+        <el-select v-model="selectedSchemaId" placeholder="选择特征方案"
+          style="width: 300px" @change="onSchemaChange">
+          <el-option v-for="s in schemaList" :key="s.id"
+            :label="`${s.name} (${s.feature_count}个特征)`" :value="s.id" />
+        </el-select>
+        <el-button size="small" type="primary" plain style="margin-left: 8px"
+          @click="$router.push('/prediction/features')">管理方案</el-button>
       </div>
+      <!-- 模板下载 + 列结构提示 -->
+      <UploadTemplateHelper :schema-id="selectedSchemaId" />
       <el-upload drag multiple :auto-upload="false" :on-change="handleFileChange" :file-list="fileList"
         accept=".csv,.txt,.json,.xlsx,.xls" :on-remove="handleRemove">
         <div class="upload-area">
@@ -227,6 +233,8 @@ import {
   startTrainWithUpload, stopUploadTrain, downloadTemplate,
   getSavedModels
 } from '../../../api/model'
+import { listSchemas, getSchema } from '@/api/feature'
+import UploadTemplateHelper from '@/components/UploadTemplateHelper.vue'
 
 echarts.use([LineChart, CanvasRenderer, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent])
 
@@ -237,6 +245,27 @@ const epochs = ref(50)
 const learningRate = ref(0.001)
 const isTraining = ref(false)
 const trainMode = ref('random')
+
+// 特征方案
+const schemaList = ref([])
+const selectedSchemaId = ref('default')
+const currentSchema = ref(null)
+const schemaFeatures = ref([])
+
+async function loadSchemas() {
+  const res = await listSchemas()
+  schemaList.value = res.data || []
+}
+loadSchemas()
+
+async function onSchemaChange(schemaId) {
+  const res = await getSchema(schemaId)
+  currentSchema.value = res.data
+  schemaFeatures.value = (res.data.features || []).map(f => ({
+    ...f, weight: f.weight ?? 1.0
+  }))
+}
+onSchemaChange('default')
 
 // 模型来源
 const modelSource = ref('new')
@@ -1057,7 +1086,7 @@ async function handleUploadAll() {
   var ok = 0
   for (var i = 0; i < fileList.value.length; i++) {
     var f = fileList.value[i]
-    try { await uploadFile(f.raw); ok++ }
+    try { await uploadFile(f.raw, selectedSchemaId.value); ok++ }
     catch (e) { ElMessage.error(f.name + ' 失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message)) }
   }
   if (ok > 0) ElMessage.success(ok + ' 个文件上传成功')
