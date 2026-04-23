@@ -298,7 +298,12 @@
               <el-form :model="plcForm" label-position="top" size="small">
                 <el-form-item label="PLC设备">
                   <el-select v-model="plcForm.device_id" placeholder="选择设备" style="width: 100%;">
-                    <el-option v-for="d in plcDevices" :key="d.id" :label="d.device_name" :value="d.id" />
+                    <el-option v-for="d in plcDevices" :key="d.id" :label="d.name + ' (' + d.ip + ')'" :value="d.id">
+                      <span>{{ d.name }}</span>
+                      <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small" style="margin-left: 8px;">
+                        {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟' : '未连接' }}
+                      </el-tag>
+                    </el-option>
                   </el-select>
                 </el-form-item>
                 <el-form-item label="点位ID (逗号分隔, 留空=全部)">
@@ -718,8 +723,10 @@ function renderPredictChart() {
 async function loadPLCDevices() {
   try {
     const res = await getPlcDeviceList()
-    plcDevices.value = res.data?.list || res.data || []
-  } catch {}
+    plcDevices.value = res.data || []
+  } catch (e) {
+    console.warn('加载PLC设备失败:', e)
+  }
 }
 
 function togglePLCStream() {
