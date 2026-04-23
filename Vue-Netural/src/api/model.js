@@ -11,9 +11,14 @@ export function startTrain(data) { return request.post('/model/train/start', dat
 export function stopTrain() { return request.post('/model/train/stop') }
 export function getTrainStatus() { return request.get('/model/train/status') }
 
-// ========== 上传数据训练 ==========
-export function startTrainWithUpload(params) { return request.post('/model/train/upload', null, { params }) }
-export function stopUploadTrain(modelKey) { return request.post('/model/train/upload/stop', null, { params: { model_key: modelKey } }) }
+// ========== 上传数据训练（支持自定义特征列） ==========
+export function startTrainWithUpload(params) {
+  // params 包含: model_key, file_ids, epochs, lr, batch_size, schema_id, feature_weights, ...
+  return request.post('/model/train/upload', null, { params })
+}
+export function stopUploadTrain(modelKey) {
+  return request.post('/model/train/upload/stop', null, { params: { model_key: modelKey } })
+}
 
 // ========== 模型版本管理 ==========
 export function getSavedModels(modelKey) {
@@ -22,21 +27,31 @@ export function getSavedModels(modelKey) {
 }
 export function deleteSavedModel(modelId) { return request.delete(`/model/saved/${modelId}`) }
 export function loadSavedModel(modelId) { return request.post(`/model/saved/${modelId}/load`) }
-export function renameSavedModel(modelId, name) { return request.put(`/model/saved/${modelId}/rename`, { name }) }
+export function renameSavedModel(modelId, name) {
+  return request.put(`/model/saved/${modelId}/rename`, { name })
+}
 
-// ========== 文件上传 ==========
-export function uploadFile(file) {
+// ========== 文件上传（支持自定义特征列） ==========
+export function uploadFile(file, schemaId) {
   const fd = new FormData()
   fd.append('file', file)
-  return request.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  const params = schemaId ? { schema_id: schemaId } : {}
+  return request.post('/upload', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    params
+  })
 }
 export function getUploadedFiles() { return request.get('/upload/list') }
 export function getUploadPreview(fileId) { return request.get(`/upload/preview/${fileId}`) }
 export function deleteUploadedFile(fileId) { return request.delete(`/upload/${fileId}`) }
 
-// ========== 下载模板 ==========
-export function downloadTemplate(format) {
-  const url = `http://localhost:8000/upload/template?format=${format || 'csv'}`
+// ========== 下载模板（支持自定义特征列） ==========
+export function downloadTemplate(format, schemaId) {
+  const params = new URLSearchParams()
+  params.set('format', format || 'csv')
+  if (schemaId) params.set('schema_id', schemaId)
+
+  const url = `http://localhost:8000/upload/template?${params.toString()}`
   const token = localStorage.getItem('token')
   return fetch(url, {
     headers: { 'Authorization': 'Bearer ' + (token || '') }
