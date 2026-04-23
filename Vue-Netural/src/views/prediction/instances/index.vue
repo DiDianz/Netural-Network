@@ -310,12 +310,9 @@ onMounted(async () => {
 
 async function loadInstanceTypes() {
   try {
-    const res = await request.get('/system/config/get/prediction_instance_types')
-    if (res.data && res.data.config_value) {
-      const arr = JSON.parse(res.data.config_value)
-      if (Array.isArray(arr) && arr.length > 0) {
-        instanceTypes.value = arr
-      }
+    const res = await request.get('/system/menu/instance-types')
+    if (res.data && res.data.length > 0) {
+      instanceTypes.value = res.data
     }
   } catch (e) {
     // 使用默认值

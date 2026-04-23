@@ -15,6 +15,7 @@ class MenuItem(BaseModel):
     visible: str = "0"
     status: str = "0"
     icon: str = "#"
+    as_instance_type: str = "N"
     create_time: Optional[datetime] = None
     remark: str = ""
     children: list["MenuItem"] = []
@@ -33,6 +34,7 @@ class MenuCreate(BaseModel):
     visible: str = "0"
     status: str = "0"
     icon: str = "#"
+    as_instance_type: str = "N"
     remark: str = ""
 
 
@@ -47,6 +49,7 @@ class MenuUpdate(BaseModel):
     visible: str = "0"
     status: str = "0"
     icon: str = "#"
+    as_instance_type: str = "N"
     remark: str = ""
 
 

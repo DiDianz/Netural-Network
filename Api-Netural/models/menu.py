@@ -25,5 +25,6 @@ class SysMenu(Base):
     visible = Column(String(1), default="0", comment="是否显示(0显示 1隐藏)")
     status = Column(String(1), default="0", comment="菜单状态(0正常 1停用)")
     icon = Column(String(100), default="#", comment="菜单图标")
+    as_instance_type = Column(String(1), default="N", comment="可作为预测实例类型(Y是 N否)")
     create_time = Column(DateTime, default=datetime.now)
     remark = Column(String(500), comment="备注")

@@ -45,6 +45,52 @@ def _migrate_prediction_instance(db):
             db.rollback()
             print(f"prediction_instance 迁移失败: {e}")
 
+    # 检查 instance_type 列
+    try:
+        db.execute(text("SELECT TOP 1 instance_type FROM prediction_instance"))
+    except Exception:
+        try:
+            db.execute(text("ALTER TABLE prediction_instance ADD instance_type NVARCHAR(50) DEFAULT 'realtime'"))
+            db.commit()
+            print("prediction_instance 表已添加 instance_type 列")
+        except Exception as e:
+            db.rollback()
+            print(f"prediction_instance instance_type 迁移失败: {e}")
+
+
+def _migrate_menu_as_instance_type(db):
+    """为 sys_menu 表添加 as_instance_type 列，并初始化标记"""
+    try:
+        db.execute(text("SELECT TOP 1 as_instance_type FROM sys_menu"))
+        # 列已存在，检查是否需要初始化标记
+        _init_instance_type_flags(db)
+    except Exception:
+        try:
+            db.execute(text("ALTER TABLE sys_menu ADD as_instance_type NVARCHAR(1) DEFAULT 'N'"))
+            db.commit()
+            print("sys_menu 表已添加 as_instance_type 列")
+            _init_instance_type_flags(db)
+        except Exception as e:
+            db.rollback()
+            print(f"sys_menu as_instance_type 迁移失败: {e}")
+
+
+def _init_instance_type_flags(db):
+    """为已有的可作为实例类型的菜单设置标记"""
+    try:
+        # 烘丝机出口水分模型
+        db.execute(text(
+            "UPDATE sys_menu SET as_instance_type = 'Y' WHERE menu_name = '烘丝机出口水分模型' AND as_instance_type = 'N'"
+        ))
+        # 实时预测
+        db.execute(text(
+            "UPDATE sys_menu SET as_instance_type = 'Y' WHERE menu_name = '实时预测' AND as_instance_type = 'N'"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"初始化实例类型标记失败: {e}")
+
 
 def init_db():
     Base.metadata.create_all(bind=engine)
@@ -56,6 +102,7 @@ def init_db():
             print("数据库已初始化，跳过")
             _migrate_menus(db)
             _migrate_prediction_instance(db)
+            _migrate_menu_as_instance_type(db)
             return
 
         _init_roles(db)
@@ -112,7 +159,7 @@ def _init_menus(db):
         # 神经网络预测子菜单
         SysMenu(menu_id=20, menu_name="实时预测", parent_id=2, order_num=1,
                 path="realtime", component="prediction/realtime/index", menu_type="C",
-                visible="0", status="0", icon="monitor"),
+                visible="0", status="0", icon="monitor", as_instance_type="Y"),
         SysMenu(menu_id=21, menu_name="历史记录", parent_id=2, order_num=2,
                 path="history", component="prediction/history/index", menu_type="C",
                 visible="0", status="0", icon="date"),
@@ -124,7 +171,7 @@ def _init_menus(db):
                 visible="0", status="0", icon="folder"),
         SysMenu(menu_id=25, menu_name="烘丝机出口水分模型", parent_id=2, order_num=7,
                 path="dryer", component="prediction/dryer/index", menu_type="C",
-                visible="0", status="0", icon="trend-charts"),
+                visible="0", status="0", icon="trend-charts", as_instance_type="Y"),
         SysMenu(menu_id=26, menu_name="预测实例管理", parent_id=2, order_num=6,
                 path="instances", component="prediction/instances/index", menu_type="C",
                 visible="0", status="0", icon="list"),

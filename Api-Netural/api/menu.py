@@ -88,6 +88,7 @@ def build_menu_tree(menus: list[SysMenu], parent_id: int = 0) -> list[MenuItem]:
                 visible=m.visible or "0",
                 status=m.status or "0",
                 icon=m.icon or "#",
+                as_instance_type=m.as_instance_type or "N",
                 create_time=m.create_time,
                 remark=m.remark or "",
                 children=children,
@@ -156,6 +157,7 @@ async def menu_debug(db: Session = Depends(get_db)):
             "status": m.status,
             "visible": m.visible,
             "icon": m.icon,
+            "as_instance_type": m.as_instance_type or "N",
         }
         for m in menus
     ]
@@ -169,6 +171,27 @@ async def get_menu_tree(
     """获取菜单树（全部，用于菜单管理页）"""
     menus = db.query(SysMenu).order_by(SysMenu.order_num).all()
     return build_menu_tree(menus)
+
+
+@router.get("/instance-types")
+async def get_instance_types(db: Session = Depends(get_db)):
+    """获取可作为预测实例类型的菜单列表（公开接口，无需认证）"""
+    menus = db.query(SysMenu).filter(
+        SysMenu.as_instance_type == "Y",
+        SysMenu.status == "0"
+    ).order_by(SysMenu.order_num).all()
+    return {
+        "code": 200,
+        "data": [
+            {
+                "key": m.path or f"menu_{m.menu_id}",
+                "name": m.menu_name,
+                "menu_id": m.menu_id,
+                "icon": m.icon or "",
+            }
+            for m in menus
+        ]
+    }
 
 
 @router.get("/treeselect")
@@ -204,6 +227,7 @@ async def get_menu(
         "visible": menu.visible or "0",
         "status": menu.status or "0",
         "icon": menu.icon or "#",
+        "as_instance_type": menu.as_instance_type or "N",
         "remark": menu.remark or "",
     }
 
@@ -225,6 +249,7 @@ async def add_menu(
         visible=data.visible,
         status=data.status,
         icon=data.icon,
+        as_instance_type=data.as_instance_type,
         remark=data.remark,
     )
     db.add(menu)
@@ -253,6 +278,7 @@ async def update_menu(
     menu.visible = data.visible
     menu.status = data.status
     menu.icon = data.icon
+    menu.as_instance_type = data.as_instance_type
     menu.remark = data.remark
     db.commit()
     return {"msg": "修改成功"}

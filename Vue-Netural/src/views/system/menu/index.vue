@@ -55,6 +55,12 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="可用作实例" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.as_instance_type === 'Y'" type="success" size="small" effect="dark">是</el-tag>
+            <el-tag v-else type="info" size="small">否</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="220" align="center">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="handleAdd(row)">
@@ -149,6 +155,14 @@
               </el-radio-group>
             </el-form-item>
           </el-col>
+          <el-col :span="12" v-if="form.menu_type === 'C'">
+            <el-form-item label="可用作实例">
+              <el-radio-group v-model="form.as_instance_type">
+                <el-radio value="Y">是</el-radio>
+                <el-radio value="N">否</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
             <el-form-item label="备注">
               <el-input v-model="form.remark" type="textarea" placeholder="请输入备注" />
@@ -195,6 +209,7 @@ const form = reactive({
   visible: '0',
   status: '0',
   icon: '#',
+  as_instance_type: 'N',
   remark: '',
 })
 
@@ -244,6 +259,7 @@ function resetForm() {
   form.visible = '0'
   form.status = '0'
   form.icon = '#'
+  form.as_instance_type = 'N'
   form.remark = ''
 }
 
@@ -272,6 +288,7 @@ function handleEdit(row) {
   form.visible = row.visible
   form.status = row.status
   form.icon = row.icon
+  form.as_instance_type = row.as_instance_type || 'N'
   form.remark = row.remark
   loadMenuTreeOptions()
   dialogVisible.value = true
