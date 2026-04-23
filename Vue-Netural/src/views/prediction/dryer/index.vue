@@ -502,7 +502,8 @@ async function refreshAnalysis() {
     await nextTick()
     renderAnalysisCharts()
   } catch (e) {
-    // silent
+    const msg = e.response?.data?.detail || e.message || '分析失败'
+    ElMessage.error('数据分析失败: ' + msg)
   } finally {
     analyzing.value = false
   }

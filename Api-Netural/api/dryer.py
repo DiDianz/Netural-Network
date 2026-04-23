@@ -146,6 +146,32 @@ async def upload_data(file: UploadFile = File(...)):
     }
 
 
+@router.get("/debug")
+async def debug_info():
+    """调试: 检查数据文件和模型目录状态"""
+    data_file = MODEL_DIR / "training_data.npy"
+    info = {
+        "model_dir": str(MODEL_DIR),
+        "model_dir_exists": MODEL_DIR.exists(),
+        "data_file": str(data_file),
+        "data_file_exists": data_file.exists(),
+    }
+    if data_file.exists():
+        try:
+            data = np.load(data_file, allow_pickle=True)
+            info["data_shape"] = list(data.shape)
+            info["data_dtype"] = str(data.dtype)
+            info["data_file_size"] = data_file.stat().st_size
+        except Exception as e:
+            info["load_error"] = str(e)
+
+    registry = _load_registry()
+    info["registry"] = registry
+    info["saved_models"] = [f.name for f in MODEL_DIR.glob("*.pth")]
+
+    return {"code": 200, "data": info}
+
+
 @router.get("/analyze")
 async def analyze_data():
     """数据分析 — 统计 + 相关性 + 分布"""
@@ -153,10 +179,17 @@ async def analyze_data():
     if not data_file.exists():
         raise HTTPException(400, "请先上传训练数据")
 
-    data = np.load(data_file, allow_pickle=True)
+    try:
+        data = np.load(data_file, allow_pickle=True)
+    except Exception as e:
+        raise HTTPException(500, f"加载数据文件失败: {str(e)}")
+
+    if data.ndim != 2 or data.shape[1] != len(FEATURE_NAMES) + 1:
+        raise HTTPException(400, f"数据维度异常: {data.shape}，期望 (N, {len(FEATURE_NAMES) + 1})")
+
     n_features = len(FEATURE_NAMES)
-    features = data[:, :n_features]
-    target = data[:, n_features]
+    features = data[:, :n_features].astype(np.float64)
+    target = data[:, n_features].astype(np.float64)
 
     # 1. 基本统计
     stats = {}
