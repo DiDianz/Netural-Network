@@ -455,7 +455,7 @@ const weightsChartRef = ref(null)
 const predictChartRef = ref(null)
 const plcChartRef = ref(null)
 
-let charts = {}
+let charts = new Map()
 
 // ---- 初始化 ----
 onMounted(async () => {
@@ -466,17 +466,25 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  Object.values(charts).forEach(c => c?.dispose())
+  charts.forEach(c => c?.dispose())
+  charts.clear()
   if (plcEventSource) plcEventSource.close()
+  window.removeEventListener('resize', handleResize)
 })
+
+function handleResize() {
+  charts.forEach(c => c?.resize())
+}
 
 function getChart(refEl) {
   if (!refEl.value) return null
-  const key = refEl.value
-  if (!charts[key]) {
-    charts[key] = echarts.init(key)
+  if (charts.has(refEl.value)) {
+    return charts.get(refEl.value)
   }
-  return charts[key]
+  const chart = echarts.init(refEl.value)
+  charts.set(refEl.value, chart)
+  window.addEventListener('resize', handleResize)
+  return chart
 }
 
 // ---- 上传 ----
@@ -505,7 +513,8 @@ async function refreshAnalysis() {
     hasData.value = true
     dataRows.value = res.data.total_rows
     await nextTick()
-    renderAnalysisCharts()
+    // 延迟一点确保 DOM 完全渲染
+    setTimeout(() => renderAnalysisCharts(), 100)
   } catch (e) {
     const msg = e.response?.data?.detail || e.message || '分析失败'
     ElMessage.error('数据分析失败: ' + msg)
