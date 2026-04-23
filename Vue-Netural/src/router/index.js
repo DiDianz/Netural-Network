@@ -65,6 +65,12 @@ const routes = [
         name: 'SystemConfig',
         component: () => import('../views/system/config/index.vue'),
         meta: { title: '系统设置', icon: 'setting' }
+      },
+      {
+        path: 'log',
+        name: 'SystemLog',
+        component: () => import('../views/system/log/index.vue'),
+        meta: { title: '操作日志', icon: 'document' }
       }
     ]
   },

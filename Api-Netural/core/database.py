@@ -413,6 +413,14 @@ def _migrate_menus(db):
                     path="dryer", component="prediction/dryer/index", menu_type="C",
                     visible="0", status="0", icon="trend-charts"))
 
+        # 操作日志菜单（如果不存在）
+        if "操作日志" not in existing_names:
+            system_parent = existing_names.get("系统管理")
+            if system_parent:
+                new_menus.append(SysMenu(menu_name="操作日志", parent_id=system_parent.menu_id, order_num=5,
+                    path="log", component="system/log/index", menu_type="C",
+                    visible="0", status="0", icon="log"))
+
         if new_menus:
             db.add_all(new_menus)
 
