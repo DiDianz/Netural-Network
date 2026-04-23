@@ -219,8 +219,12 @@ watch(
   }
 )
 
+var resizeTimer = null
 function handleResize() {
-  if (chartInstance.value) chartInstance.value.resize()
+  if (resizeTimer) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(function () {
+    if (chartInstance.value) chartInstance.value.resize()
+  }, 200)
 }
 
 onMounted(function () {
@@ -230,6 +234,7 @@ onMounted(function () {
 
 onUnmounted(function () {
   window.removeEventListener('resize', handleResize)
+  if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
   if (chartInstance.value) {
     chartInstance.value.dispose()
     chartInstance.value = null

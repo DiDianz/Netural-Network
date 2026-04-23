@@ -523,10 +523,15 @@ onUnmounted(() => {
   charts.clear()
   if (plcEventSource) plcEventSource.close()
   window.removeEventListener('resize', handleResize)
+  if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
 })
 
+let resizeTimer = null
 function handleResize() {
-  charts.forEach(c => c?.resize())
+  if (resizeTimer) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(() => {
+    charts.forEach(c => c?.resize())
+  }, 200)
 }
 
 function getChart(refEl) {

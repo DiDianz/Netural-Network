@@ -355,26 +355,31 @@ onMounted(() => {
 
 onUnmounted(() => { cleanup() })
 
+var resizeTimer = null
 function handleWindowResize() {
-  try {
-    if (lossChart) lossChart.resize()
-    if (lrChart) lrChart.resize()
-    if (valPredChart) valPredChart.resize()
-    if (trendChart) trendChart.resize()
-    brandList.value.forEach(function (brand) {
-      var el = document.getElementById('brand-chart-' + brand)
-      if (el) {
-        var inst = echarts.getInstanceByDom(el)
-        if (inst) inst.resize()
-      }
-    })
-  } catch (e) { }
+  if (resizeTimer) clearTimeout(resizeTimer)
+  resizeTimer = setTimeout(function () {
+    try {
+      if (lossChart) lossChart.resize()
+      if (lrChart) lrChart.resize()
+      if (valPredChart) valPredChart.resize()
+      if (trendChart) trendChart.resize()
+      brandList.value.forEach(function (brand) {
+        var el = document.getElementById('brand-chart-' + brand)
+        if (el) {
+          var inst = echarts.getInstanceByDom(el)
+          if (inst) inst.resize()
+        }
+      })
+    } catch (e) { }
+  }, 200)
 }
 
 function cleanup() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (sseSource) { try { sseSource.close() } catch (e) { } sseSource = null }
   if (brandChartTimer) { clearInterval(brandChartTimer); brandChartTimer = null }
+  if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null }
   window.removeEventListener('resize', handleWindowResize)
   if (lossChart) { try { lossChart.dispose() } catch (e) { } lossChart = null }
   if (lrChart) { try { lrChart.dispose() } catch (e) { } lrChart = null }
