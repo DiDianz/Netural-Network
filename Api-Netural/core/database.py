@@ -217,6 +217,11 @@ def _migrate_menus(db):
             db.add(SysConfig(config_name="删除模型时同时删除本地文件",
                 config_key="model_delete_local_file", config_value="false",
                 config_type="Y", remark="启用后，删除已保存模型版本时将同时删除本地 .pth 文件"))
+        if "prediction_instance_types" not in existing_configs:
+            db.add(SysConfig(config_name="预测实例类型",
+                config_key="prediction_instance_types",
+                config_value='[{"key":"realtime","name":"实时预测[通用]","desc":"通用神经网络实时预测，支持 LSTM/GRU/Transformer"},{"key":"dryer","name":"烘丝机出口水分模型","desc":"烘丝机专用预测模型，LSTM+Attention 架构"}]',
+                config_type="Y", remark="新建预测实例时可选的实例类型（JSON 格式）"))
 
         db.commit()
         if new_menus:
@@ -266,5 +271,9 @@ def _init_configs(db):
         SysConfig(config_id=1, config_name="删除模型时同时删除本地文件",
                   config_key="model_delete_local_file", config_value="false",
                   config_type="Y", remark="启用后，删除已保存模型版本时将同时删除本地 .pth 文件"),
+        SysConfig(config_id=2, config_name="预测实例类型",
+                  config_key="prediction_instance_types",
+                  config_value='[{"key":"realtime","name":"实时预测[通用]","desc":"通用神经网络实时预测，支持 LSTM/GRU/Transformer"},{"key":"dryer","name":"烘丝机出口水分模型","desc":"烘丝机专用预测模型，LSTM+Attention 架构"}]',
+                  config_type="Y", remark="新建预测实例时可选的实例类型（JSON 格式）"),
     ]
     db.add_all(configs)

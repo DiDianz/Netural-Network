@@ -22,11 +22,11 @@
           <span class="ic-name">{{ inst.name }}</span>
           <div class="ic-header-tags">
             <el-tag
-              :type="inst.instance_type === 'dryer' ? 'warning' : 'primary'"
+              :type="inst.instance_type === 'realtime' ? 'primary' : 'warning'"
               size="small"
               effect="plain"
             >
-              {{ inst.instance_type === 'dryer' ? '烘丝机' : '通用' }}
+              {{ instanceTypes.find(t => t.key === inst.instance_type)?.name || inst.instance_type }}
             </el-tag>
             <el-tag
               :type="inst.device_connected ? 'success' : 'info'"
@@ -53,8 +53,10 @@
           </div>
           <div class="ic-info-row" v-else>
             <span class="ic-label">模型</span>
-            <el-tag type="warning" size="small">LSTM+Attention</el-tag>
-            <el-tag type="info" size="small" effect="plain">烘丝机专用</el-tag>
+            <el-tag type="warning" size="small">专用模型</el-tag>
+            <el-tag type="info" size="small" effect="plain">
+              {{ instanceTypes.find(t => t.key === inst.instance_type)?.name || '自定义' }}
+            </el-tag>
           </div>
           <div class="ic-info-row">
             <span class="ic-label">设备</span>
@@ -135,13 +137,12 @@
 
         <el-form-item label="实例类型" required>
           <el-radio-group v-model="formData.instance_type" size="default" @change="handleTypeChange">
-            <el-radio-button value="realtime">
-              <el-icon><Monitor /></el-icon>
-              <span style="margin-left: 4px">实时预测[通用]</span>
-            </el-radio-button>
-            <el-radio-button value="dryer">
-              <el-icon><TrendCharts /></el-icon>
-              <span style="margin-left: 4px">烘丝机出口水分模型</span>
+            <el-radio-button
+              v-for="t in instanceTypes"
+              :key="t.key"
+              :value="t.key"
+            >
+              {{ t.name }}
             </el-radio-button>
           </el-radio-group>
         </el-form-item>
@@ -225,9 +226,9 @@
           <el-button size="default" :icon="Refresh" circle style="margin-left: 8px" @click="loadSavedModels" :loading="loadingSavedModels" />
         </el-form-item>
 
-        <el-form-item v-if="formData.instance_type === 'dryer'" label="模型说明">
+        <el-form-item v-if="formData.instance_type !== 'realtime'" label="模型说明">
           <el-text type="info" size="small">
-            烘丝机出口水分模型使用独立的 LSTM+Attention 架构，请先在「烘丝机出口水分模型」页面完成训练。
+            {{ instanceTypes.find(t => t.key === formData.instance_type)?.desc || '该实例类型使用独立模型，请先完成对应模型训练。' }}
           </el-text>
         </el-form-item>
 
@@ -251,10 +252,11 @@
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Edit, Delete, Monitor, Refresh, TrendCharts } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Monitor, Refresh } from '@element-plus/icons-vue'
 import { getInstanceList, addInstance, updateInstance, deleteInstance } from '../../../api/instance'
 import { getPlcDeviceList, getPlcPointList } from '../../../api/plc'
 import { getSavedModels } from '../../../api/model'
+import request from '../../../api/request'
 
 const router = useRouter()
 
@@ -266,6 +268,10 @@ const devicePoints = ref([])
 const loadingPoints = ref(false)
 const savedModels = ref([])
 const loadingSavedModels = ref(false)
+const instanceTypes = ref([
+  { key: 'realtime', name: '实时预测[通用]', desc: '通用神经网络实时预测' },
+  { key: 'dryer', name: '烘丝机出口水分模型', desc: '烘丝机专用预测模型' }
+])
 
 // 已保存模型按当前选中的模型类型筛选
 const filteredSavedModels = computed(() => {
@@ -299,8 +305,23 @@ function handleTypeChange(val) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadInstances(), loadDevices(), loadSavedModels()])
+  await Promise.all([loadInstances(), loadDevices(), loadSavedModels(), loadInstanceTypes()])
 })
+
+async function loadInstanceTypes() {
+  try {
+    const res = await request.get('/system/config/get/prediction_instance_types')
+    if (res.data && res.data.config_value) {
+      const arr = JSON.parse(res.data.config_value)
+      if (Array.isArray(arr) && arr.length > 0) {
+        instanceTypes.value = arr
+      }
+    }
+  } catch (e) {
+    // 使用默认值
+    console.warn('加载实例类型配置失败，使用默认值')
+  }
+}
 
 async function loadInstances() {
   loading.value = true
