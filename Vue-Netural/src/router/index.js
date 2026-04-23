@@ -119,6 +119,12 @@ const routes = [
         meta: { title: '模型训练', icon: 'cpu' }
       },
       {
+        path: 'features',
+        name: 'Features',
+        component: () => import('../views/prediction/features/index.vue'),
+        meta: { title: '特征方案', icon: 'setting' }
+      },
+      {
         path: 'dryer',
         name: 'PredictionDryer',
         component: () => import('../views/prediction/dryer/index.vue'),
