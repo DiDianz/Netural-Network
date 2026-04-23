@@ -620,21 +620,19 @@ async function startTraining() {
   doStartTraining()
 }
 
-// 选择已有模型
+// 选择已有模型继续训练
 async function showModelSelector() {
-  const modelOptions = versions.value.map(v => ({
-    label: `${v.version}  |  R²: ${v.metrics?.final_r2 ?? '-'}  |  Loss: ${v.metrics?.best_test_loss ?? '-'}  |  ${v.is_active ? '✓ 当前激活' : ''}`,
-    value: v.version,
-    isActive: v.is_active
-  }))
+  const modelOptions = versions.value.map(v =>
+    `${v.version}  |  R²: ${v.metrics?.final_r2 ?? '-'}  |  Loss: ${v.metrics?.best_test_loss ?? '-'}  |  ${v.is_active ? '✓ 当前激活' : ''}`
+  )
 
   try {
     const { value: selectedVersion } = await ElMessageBox.prompt(
-      '输入要激活的模型版本号，或从下方列表中复制：\n\n' +
-      modelOptions.map(o => o.label).join('\n'),
-      '选择已有模型',
+      '选择一个已有模型作为起点继续训练（微调）：\n\n' +
+      modelOptions.join('\n'),
+      '基于已有模型继续训练',
       {
-        confirmButtonText: '激活',
+        confirmButtonText: '继续训练',
         cancelButtonText: '取消',
         inputValue: versions.value.find(v => v.is_active)?.version || '',
         inputPlaceholder: '粘贴版本号',
@@ -642,17 +640,16 @@ async function showModelSelector() {
     )
 
     if (selectedVersion) {
-      await doActivate(selectedVersion)
-      ElMessage.success(`已激活模型: ${selectedVersion}`)
-      activeTab.value = 'predict'  // 跳转到预测页
+      // 基于已有模型继续训练
+      doStartTraining(selectedVersion)
     }
   } catch {
     // 用户取消
   }
 }
 
-// 执行训练
-function doStartTraining() {
+// 执行训练 (baseVersion 可选，用于微调已有模型)
+function doStartTraining(baseVersion) {
   training.value = true
   trainingDone.value = false
   trainProgress.value = null
@@ -662,6 +659,7 @@ function doStartTraining() {
 
   const tr = targetRangeStr.value.split(',').map(Number)
   const params = { ...trainForm, target_range: tr.join(',') }
+  if (baseVersion) params.base_version = baseVersion
   const qs = new URLSearchParams(params).toString()
 
   const es = new EventSource(`http://localhost:8000/dryer/train?${qs}`)

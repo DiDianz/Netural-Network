@@ -272,7 +272,8 @@ async def train_model(
     dropout: float = Query(0.2, ge=0, le=0.5),
     test_ratio: float = Query(0.2, ge=0.1, le=0.4),
     feature_weights: str = Query("", description="逗号分隔的12个特征权重"),
-    target_range: str = Query("14.0,15.0", description="目标水分范围")
+    target_range: str = Query("14.0,15.0", description="目标水分范围"),
+    base_version: str = Query("", description="基于已有模型继续训练(微调)")
 ):
     """训练模型 — SSE 流式输出训练进度"""
 
@@ -325,6 +326,19 @@ async def train_model(
                 num_layers=num_layers,
                 dropout=dropout
             )
+
+            # 如果指定了基础模型，加载已有权重继续训练
+            if base_version:
+                base_path = MODEL_DIR / f"{base_version}.pth"
+                if base_path.exists():
+                    checkpoint = torch.load(base_path, map_location="cpu", weights_only=False)
+                    try:
+                        model.load_state_dict(checkpoint['model_state'], strict=False)
+                        yield f"data: {json.dumps({'type': 'progress', 'epoch': 0, 'total_epochs': epochs, 'train_loss': 0, 'test_loss': 0, 'r2': 0, 'lr': learning_rate, 'best_loss': 0, 'feature_weights': model.get_feature_weights(), 'msg': f'已加载基础模型: {base_version}，继续训练中...'}, ensure_ascii=False)}\n\n"
+                    except Exception as e:
+                        yield f"data: {json.dumps({'type': 'progress', 'epoch': 0, 'total_epochs': epochs, 'train_loss': 0, 'test_loss': 0, 'r2': 0, 'lr': learning_rate, 'best_loss': 0, 'feature_weights': [1.0]*n_features, 'msg': f'基础模型权重不匹配({str(e)})，从头训练'}, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'progress', 'epoch': 0, 'total_epochs': epochs, 'train_loss': 0, 'test_loss': 0, 'r2': 0, 'lr': learning_rate, 'best_loss': 0, 'feature_weights': [1.0]*n_features, 'msg': f'基础模型 {base_version} 不存在，从头训练'}, ensure_ascii=False)}\n\n"
 
             # 设置初始特征权重
             if parsed_fw and len(parsed_fw) == n_features:
