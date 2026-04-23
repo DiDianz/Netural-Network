@@ -586,7 +586,7 @@ async function startTraining() {
   trainLossHistory.test = []
 
   const tr = targetRangeStr.value.split(',').map(Number)
-  const params = { ...trainForm, target_range: JSON.stringify(tr) }
+  const params = { ...trainForm, target_range: tr.join(',') }
   const qs = new URLSearchParams(params).toString()
 
   const es = new EventSource(`http://localhost:8000/dryer/train?${qs}`)
