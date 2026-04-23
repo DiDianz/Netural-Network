@@ -53,7 +53,6 @@ function getDefaultMenus() {
         { name: 'PredictionModels', path: 'models', meta: { title: '模型管理', icon: 'code' } },
         { name: 'PredictionSavedModels', path: 'saved-models', meta: { title: '已保存模型', icon: 'folder' } },
         { name: 'PredictionInstances', path: 'instances', meta: { title: '预测实例管理', icon: 'list' } },
-        { name: 'PredictionTraining', path: 'training', meta: { title: '模型训练', icon: 'cpu' } },
         { name: 'PredictionDryer', path: 'dryer', meta: { title: '烘丝机出口水分模型', icon: 'trend-charts' } }
       ]
     },

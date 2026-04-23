@@ -193,6 +193,13 @@ def _migrate_menus(db):
                     path="instances", component="prediction/instances/index", menu_type="C",
                     visible="0", status="0", icon="list"))
 
+        # 删除模型训练菜单（不应显示在侧边栏）
+        if "模型训练" in existing_names:
+            training_menu = existing_names["模型训练"]
+            from models.menu import sys_role_menu
+            db.execute(sys_role_menu.delete().where(sys_role_menu.c.menu_id == training_menu.menu_id))
+            db.query(SysMenu).filter(SysMenu.menu_id == training_menu.menu_id).delete()
+
         # 烘丝机出口水分模型菜单（如果不存在）
         if "烘丝机出口水分模型" not in existing_names:
             prediction_parent = existing_names.get("神经网络预测")
