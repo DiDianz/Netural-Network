@@ -1,4 +1,7 @@
 # api/upload.py
+"""
+文件上传 API — 支持自定义特征列（基于特征方案 schema）
+"""
 import uuid
 import io
 import csv
@@ -7,6 +10,7 @@ from collections import Counter
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from core.data_manager import data_manager
+from core.feature_schema import feature_schema_manager
 
 router = APIRouter(prefix="/upload", tags=["文件上传"])
 logger = logging.getLogger("upload")
@@ -14,23 +18,13 @@ logger = logging.getLogger("upload")
 MAX_FILE_SIZE = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".csv", ".txt", ".json", ".xlsx", ".xls"}
 
-INPUT_DIM = 11
-WINDOW_SIZE = 60
-MIN_TRAIN_ROWS = WINDOW_SIZE + 10  # 70
-
-FEATURE_COLUMNS = [
-    "proc_steam_vol", "proc_air_temp",
-    "input_moist", "input_moist_SP", "moist_remove",
-    "out_moist_SP", "out_temp",
-    "mat_flow_PV", "total_mat_flow",
-    "env_temp", "env_moist"
-]
-
-TEMPLATE_COLUMNS = FEATURE_COLUMNS + ["out_moist", "brandID"]
-
 
 @router.post("")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    schema_id: str = Query("default", description="特征方案ID")
+):
+    """上传训练数据文件，按指定特征方案解析列结构"""
     filename = file.filename or "unknown"
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
@@ -43,15 +37,27 @@ async def upload_file(file: UploadFile = File(...)):
     if len(content) == 0:
         raise HTTPException(400, "文件为空")
 
+    # ===== 获取特征方案 =====
+    schema = feature_schema_manager.get_schema(schema_id)
+    if not schema:
+        raise HTTPException(400, f"特征方案不存在: {schema_id}")
+
+    input_dim = len(schema["features"])
+    target_name = schema["target"]["name"]
+    brand_name = schema["brand_column"]["name"]
+    feature_names = [f["name"] for f in schema["features"]]
+    min_required_cols = input_dim + 2  # 特征 + 目标 + 品牌
+    template_columns = feature_names + [target_name, brand_name]
+
     file_id = str(uuid.uuid4())[:8]
 
     try:
         if ext in (".csv", ".txt"):
-            data, parse_info = _parse_csv(content, filename)
+            data, parse_info = _parse_csv(content, filename, min_required_cols)
         elif ext == ".json":
-            data, parse_info = _parse_json(content)
+            data, parse_info = _parse_json(content, min_required_cols)
         elif ext in (".xlsx", ".xls"):
-            data, parse_info = _parse_excel(content)
+            data, parse_info = _parse_excel(content, min_required_cols)
         else:
             raise HTTPException(400, f"不支持: {ext}")
     except HTTPException:
@@ -62,20 +68,22 @@ async def upload_file(file: UploadFile = File(...)):
 
     if not data:
         detail = parse_info.get("reason", "未解析到有效数据")
-        raise HTTPException(400, f"解析失败: {detail}。请确认文件格式正确（至少13列数值数据）。")
+        raise HTTPException(400,
+            f"解析失败: {detail}。请确认文件格式正确（至少 {min_required_cols} 列数值数据）。")
 
     ncols = len(data[0])
 
-    if ncols < 13:
+    if ncols < min_required_cols:
         raise HTTPException(400,
-            f"数据需要至少13列（11个特征 + out_moist + brandID），当前文件有 {ncols} 列。")
+            f"数据需要至少 {min_required_cols} 列（{input_dim} 个特征 + {target_name} + {brand_name}），"
+            f"当前文件有 {ncols} 列。")
 
     # 按 brandID 分组
     grouped_data = {}
     for row in data:
-        features = row[:INPUT_DIM]
-        target = row[INPUT_DIM]
-        brand = int(row[INPUT_DIM + 1])
+        features = row[:input_dim]
+        target = row[input_dim]
+        brand = int(row[input_dim + 1])
         if brand not in grouped_data:
             grouped_data[brand] = []
         grouped_data[brand].append(features + [target])
@@ -83,12 +91,14 @@ async def upload_file(file: UploadFile = File(...)):
     total_rows = len(data)
     brand_count = len(grouped_data)
 
-    # ===== 关键：检查每个品牌是否有足够数据 =====
+    # 检查每个品牌是否有足够数据
     min_brand_rows = min(len(v) for v in grouped_data.values()) if grouped_data else 0
-    if min_brand_rows < MIN_TRAIN_ROWS:
-        small_brands = [str(b) for b, v in grouped_data.items() if len(v) < MIN_TRAIN_ROWS]
+    min_train_rows = 70  # window_size(60) + 10
+    if min_brand_rows < min_train_rows:
+        small_brands = [str(b) for b, v in grouped_data.items() if len(v) < min_train_rows]
         raise HTTPException(400,
-            f"品牌 {','.join(small_brands)} 数据不足 {MIN_TRAIN_ROWS} 行（最少需要 {MIN_TRAIN_ROWS} 行才能训练）。"
+            f"品牌 {','.join(small_brands)} 数据不足 {min_train_rows} 行"
+            f"（最少需要 {min_train_rows} 行才能训练）。"
             f"当前最小品牌只有 {min_brand_rows} 行。")
 
     data_manager.add_file(file_id, data, {
@@ -96,21 +106,127 @@ async def upload_file(file: UploadFile = File(...)):
         "num_cols": ncols,
         "num_rows": total_rows,
         "file_size": len(content),
-        "columns": TEMPLATE_COLUMNS[:ncols] if ncols <= len(TEMPLATE_COLUMNS) else [f"col_{i+1}" for i in range(ncols)],
+        "columns": template_columns[:ncols] if ncols <= len(template_columns) else [f"col_{i+1}" for i in range(ncols)],
         "brand_count": brand_count,
         "brands": sorted(grouped_data.keys()),
         "grouped_data": grouped_data,
-        "parse_info": parse_info
+        "parse_info": parse_info,
+        "schema_id": schema_id,
+        "input_dim": input_dim,
+        "feature_names": feature_names,
     })
 
     return {
         "code": 200, "msg": "上传成功", "file_id": file_id,
         "filename": filename, "num_rows": total_rows, "num_cols": ncols,
-        "brand_count": brand_count, "brands": sorted(grouped_data.keys())
+        "brand_count": brand_count, "brands": sorted(grouped_data.keys()),
+        "schema_id": schema_id, "feature_names": feature_names,
+        "input_dim": input_dim,
     }
 
 
-def _parse_csv(content: bytes, filename: str):
+# ========== 文件列表 ==========
+@router.get("/list")
+async def list_uploaded_files():
+    """列出所有已上传的文件"""
+    files = data_manager.list_files()
+    return {"code": 200, "data": files}
+
+
+# ========== 删除文件 ==========
+@router.delete("/{file_id}")
+async def delete_file(file_id: str):
+    f = data_manager.get_file(file_id)
+    if not f:
+        raise HTTPException(404, f"文件不存在: {file_id}")
+    data_manager.remove_file(file_id)
+    return {"code": 200, "msg": "删除成功"}
+
+
+# ========== 预览 ==========
+@router.get("/preview/{file_id}")
+async def preview_file(file_id: str, limit: int = Query(10, ge=1, le=100)):
+    f = data_manager.get_file(file_id)
+    if not f:
+        raise HTTPException(404, f"文件不存在: {file_id}")
+    data = f["data"][:limit]
+    meta = f["metadata"]
+    columns = meta.get("columns", [f"col_{i+1}" for i in range(len(data[0]) if data else 0)])
+    return {
+        "code": 200,
+        "columns": columns,
+        "rows": data,
+        "total": len(f["data"]),
+        "schema_id": meta.get("schema_id", "default"),
+        "feature_names": meta.get("feature_names", []),
+    }
+
+
+# ========== 下载模板 ==========
+@router.get("/template")
+async def download_template(
+    format: str = Query("csv"),
+    schema_id: str = Query("default", description="特征方案ID")
+):
+    """根据特征方案生成对应列结构的模板"""
+    schema = feature_schema_manager.get_schema(schema_id)
+    if not schema:
+        schema = feature_schema_manager.get_schema("default")
+
+    feature_names = [f["name"] for f in schema["features"]]
+    target_name = schema["target"]["name"]
+    brand_name = schema["brand_column"]["name"]
+    header = feature_names + [target_name, brand_name]
+
+    # 生成示例行（用默认值填充）
+    default_values = [300.0, 203.0, 0.26, 20.0, 0.0, 14.5, 41.5, 0.0, 8767.1, 28.2, 40.6]
+    sample_features = []
+    for i in range(len(feature_names)):
+        if i < len(default_values):
+            sample_features.append(default_values[i])
+        else:
+            sample_features.append(0.0)
+
+    sample_rows = [
+        sample_features + [0.0, 13102002],
+        sample_features + [0.1, 13102002],
+        sample_features + [0.2, 13102003],
+    ]
+
+    if format == "xlsx":
+        try:
+            import pandas as pd
+            df = pd.DataFrame(sample_rows, columns=header)
+            buf = io.BytesIO()
+            df.to_excel(buf, index=False, engine="openpyxl")
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment; filename=upload_template.xlsx"}
+            )
+        except ImportError:
+            raise HTTPException(500, "服务器未安装 openpyxl，请执行: pip install openpyxl")
+        except Exception as e:
+            raise HTTPException(500, f"生成 Excel 模板失败: {e}")
+    else:
+        # CSV
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(header)
+        for row in sample_rows:
+            writer.writerow(row)
+        buf.seek(0)
+        return StreamingResponse(
+            io.BytesIO(buf.getvalue().encode("utf-8-sig")),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=upload_template.csv"}
+        )
+
+
+# ========== 解析函数 ==========
+
+def _parse_csv(content: bytes, filename: str, min_cols: int = 13):
     text = None
     used_encoding = None
     for enc in ("utf-8-sig", "gbk", "gb2312", "latin-1"):
@@ -142,7 +258,6 @@ def _parse_csv(content: bytes, filename: str):
     except (ValueError, TypeError):
         skip = 1
 
-    # 收集所有行，只保留能全部转成 float 且列数 >= 13 的行
     parsed_rows = []
     skipped_reasons = {"non_numeric": 0, "too_few_cols": 0}
     for line in lines[skip:]:
@@ -158,7 +273,7 @@ def _parse_csv(content: bytes, filename: str):
         if has_non_numeric:
             skipped_reasons["non_numeric"] += 1
             continue
-        if len(row) < 13:
+        if len(row) < min_cols:
             skipped_reasons["too_few_cols"] += 1
             continue
         parsed_rows.append(row)
@@ -166,8 +281,8 @@ def _parse_csv(content: bytes, filename: str):
     if not parsed_rows:
         reason = (f"所有 {len(lines) - skip} 行数据均被过滤。"
                   f"原因: {skipped_reasons['non_numeric']} 行含非数值, "
-                  f"{skipped_reasons['too_few_cols']} 行列数不足13列。"
-                  f"请确认文件格式（表头+数据，每行13列纯数值）。")
+                  f"{skipped_reasons['too_few_cols']} 行列数不足 {min_cols} 列。"
+                  f"请确认文件格式（表头+数据，每行 {min_cols}+ 列纯数值）。")
         return [], {"reason": reason}
 
     col_counts = Counter(len(r) for r in parsed_rows)
@@ -187,7 +302,7 @@ def _parse_csv(content: bytes, filename: str):
     return data, info
 
 
-def _parse_json(content: bytes):
+def _parse_json(content: bytes, min_cols: int = 13):
     import json
     for enc in ("utf-8-sig", "gbk", "latin-1"):
         try:
@@ -222,7 +337,7 @@ def _parse_json(content: bytes):
     return data, {"valid_rows": len(data)}
 
 
-def _parse_excel(content: bytes):
+def _parse_excel(content: bytes, min_cols: int = 13):
     try:
         import pandas as pd
     except ImportError:
@@ -247,84 +362,12 @@ def _parse_excel(content: bytes):
             except (ValueError, TypeError):
                 ok = False
                 break
-        if ok and len(r) >= 13:
+        if ok and len(r) >= min_cols:
             data.append(r)
         else:
             skipped += 1
 
     if not data:
-        return [], {"reason": f"Excel 中无有效数据行（共 {len(df)} 行, 跳过 {skipped} 行, 有效 0 行）。请确保至少13列数值。"}
+        return [], {"reason": f"Excel 中无有效数据行（共 {len(df)} 行, 跳过 {skipped} 行, 有效 0 行）。"
+                               f"请确保至少 {min_cols} 列数值。"}
     return data, {"valid_rows": len(data), "skipped": skipped}
-
-
-# ========== 下载模板 ==========
-@router.get("/template")
-async def download_template(format: str = Query("csv")):
-    header = TEMPLATE_COLUMNS
-
-    sample_rows = [
-        [300.0, 203.0, 0.26, 20.0, 0.0, 14.5, 41.5, 0.0, 8767.1, 28.2, 40.6, 0.0, 13102002],
-        [299.5, 202.8, 0.28, 20.0, 0.0, 14.5, 41.3, 4550.0, 8767.1, 28.2, 40.7, 0.0, 13102002],
-        [299.0, 202.5, 0.30, 20.0, 0.0, 14.5, 41.1, 4550.0, 8767.1, 28.3, 40.7, 0.0, 13102002],
-        [298.5, 202.2, 0.32, 20.0, 0.0, 14.5, 40.9, 4550.0, 8767.1, 28.3, 40.8, 0.0, 13102003],
-        [298.0, 202.0, 0.34, 20.0, 0.0, 14.5, 40.7, 4550.0, 8767.1, 28.4, 40.8, 0.0, 13102003],
-    ]
-
-    if format == "xlsx":
-        try:
-            import pandas as pd
-
-            # ===== 核心修复：直接写 BytesIO，不用临时文件 =====
-            df = pd.DataFrame(sample_rows, columns=header)
-            buf = io.BytesIO()
-            df.to_excel(buf, index=False, engine="openpyxl")
-            buf.seek(0)
-
-            return StreamingResponse(
-                buf,
-                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={"Content-Disposition": "attachment; filename=upload_template.xlsx"}
-            )
-        except ImportError:
-            raise HTTPException(500, "服务器未安装 openpyxl，请执行: pip install openpyxl")
-        except Exception as e:
-            raise HTTPException(500, f"生成 Excel 模板失败: {e}")
-
-    # CSV 模板
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(header)
-    for row in sample_rows:
-        writer.writerow(row)
-    csv_bytes = output.getvalue().encode("utf-8-sig")
-    return StreamingResponse(
-        io.BytesIO(csv_bytes),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=upload_template.csv"}
-    )
-
-
-@router.get("/list")
-async def list_files():
-    return {"code": 200, "data": data_manager.list_files()}
-
-
-@router.get("/preview/{file_id}")
-async def preview_file(file_id: str):
-    f = data_manager.get_file(file_id)
-    if not f:
-        raise HTTPException(404, "文件不存在")
-    return {
-        "code": 200,
-        "data": f["data"][:20],
-        "metadata": f["metadata"],
-        "brands": f["metadata"].get("brands", [])
-    }
-
-
-@router.delete("/{file_id}")
-async def delete_file(file_id: str):
-    if not data_manager.get_file(file_id):
-        raise HTTPException(404, "文件不存在")
-    data_manager.remove_file(file_id)
-    return {"code": 200, "msg": "删除成功"}
