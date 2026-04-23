@@ -13,6 +13,7 @@
         <el-radio-button value="lstm">LSTM</el-radio-button>
         <el-radio-button value="gru">GRU</el-radio-button>
         <el-radio-button value="transformer">Transformer</el-radio-button>
+        <el-radio-button value="dryer">烘丝机</el-radio-button>
       </el-radio-group>
       <el-input v-model="searchKeyword" placeholder="搜索名称/备注" clearable style="width: 240px; margin-left: 16px" />
       <el-button @click="loadSavedModels" :loading="loading" style="margin-left: 12px">刷新</el-button>
@@ -23,6 +24,7 @@
       <el-table-column prop="model_id" label="版本ID" width="100">
         <template #default="{ row }">
           <span class="model-id-badge">{{ row.model_id }}</span>
+          <el-tag v-if="row.is_active" type="success" size="small" style="margin-left: 4px;">激活</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="名称" min-width="240">
@@ -61,7 +63,7 @@
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="goTrainWith(row)">继续训练</el-button>
           <el-button size="small" @click="handleLoadModel(row)">加载</el-button>
-          <el-popconfirm title="确定删除此模型版本？" @confirm="handleDelete(row.model_id)">
+          <el-popconfirm title="确定删除此模型版本？" @confirm="handleDelete(row)">
             <template #reference>
               <el-button size="small" type="danger">删除</el-button>
             </template>
@@ -83,6 +85,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getSavedModels, deleteSavedModel, loadSavedModel, renameSavedModel } from '../../../api/model'
+import { listVersions, deleteVersion as deleteDryerVersion, activateVersion as activateDryerVersion } from '../../../api/dryer'
 
 const router = useRouter()
 
@@ -116,32 +119,68 @@ onMounted(() => { loadSavedModels() })
 async function loadSavedModels() {
   loading.value = true
   try {
+    // 加载原有模型
     const res = await getSavedModels()
-    savedModels.value = res.data || []
+    const originalModels = (res.data || []).map(m => ({ ...m, _source: 'original' }))
+
+    // 加载烘丝机模型
+    let dryerModels = []
+    try {
+      const dRes = await listVersions()
+      dryerModels = (dRes.data || []).map(v => ({
+        model_id: v.version,
+        name: v.version,
+        display_name: '烘丝机出口水分',
+        model_key: 'dryer',
+        epochs: v.metrics?.epochs || v.config?.epochs || '-',
+        best_val_loss: v.metrics?.best_test_loss ?? '-',
+        trained_at: v.created_at?.replace('T', ' ').substring(0, 19) || '',
+        remark: `R²: ${v.metrics?.final_r2 ?? '-'} | 隐藏层: ${v.config?.hidden_dim || '-'}`,
+        file_size_kb: '-',
+        is_active: v.is_active,
+        _source: 'dryer'
+      }))
+    } catch {}
+
+    savedModels.value = [...originalModels, ...dryerModels]
   } catch (e) { console.error('加载已保存模型失败:', e) }
   finally { loading.value = false }
 }
 
 async function handleLoadModel(row) {
   try {
-    await loadSavedModel(row.model_id)
-    ElMessage.success(`已加载模型: ${row.name || row.display_name}`)
+    if (row._source === 'dryer') {
+      await activateDryerVersion(row.model_id)
+      ElMessage.success(`已激活烘丝机模型: ${row.model_id}`)
+    } else {
+      await loadSavedModel(row.model_id)
+      ElMessage.success(`已加载模型: ${row.name || row.display_name}`)
+    }
+    await loadSavedModels()
   } catch (e) { ElMessage.error('加载失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message)) }
 }
 
-async function handleDelete(modelId) {
+async function handleDelete(row) {
   try {
-    await deleteSavedModel(modelId)
+    if (row._source === 'dryer') {
+      await deleteDryerVersion(row.model_id)
+    } else {
+      await deleteSavedModel(row.model_id)
+    }
     ElMessage.success('删除成功')
     await loadSavedModels()
   } catch (e) { ElMessage.error('删除失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message)) }
 }
 
 function goTrainWith(row) {
-  router.push({
-    path: '/prediction/training',
-    query: { model: row.model_key, base_model_id: row.model_id }
-  })
+  if (row._source === 'dryer') {
+    router.push({ path: '/prediction/dryer' })
+  } else {
+    router.push({
+      path: '/prediction/training',
+      query: { model: row.model_key, base_model_id: row.model_id }
+    })
+  }
 }
 
 function startRename(row) {
@@ -168,7 +207,7 @@ async function confirmRename(modelId) {
 }
 
 function modelTagType(key) {
-  return { lstm: '', gru: 'success', transformer: 'warning' }[key] || 'info'
+  return { lstm: '', gru: 'success', transformer: 'warning', dryer: 'danger' }[key] || 'info'
 }
 </script>
 
