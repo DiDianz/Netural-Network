@@ -1,8 +1,6 @@
 // src/api/feature.js
 import request from './request'
 
-// ========== 特征方案 ==========
-
 /** 获取所有特征方案列表 */
 export function listSchemas() {
   return request.get('/feature/schema/list')
@@ -11,6 +9,11 @@ export function listSchemas() {
 /** 获取方案详情 */
 export function getSchema(schemaId) {
   return request.get(`/feature/schema/${schemaId}`)
+}
+
+/** 获取方案列结构描述（含列顺序、表头示例） */
+export function getColumnDescription(schemaId) {
+  return request.get(`/feature/schema/${schemaId}/columns`)
 }
 
 /** 创建特征方案 */
