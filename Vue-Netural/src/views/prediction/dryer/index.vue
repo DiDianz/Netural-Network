@@ -126,6 +126,14 @@
                 <el-form-item label="目标水分范围">
                   <el-input v-model="targetRangeStr" placeholder="14.0,15.0" />
                 </el-form-item>
+                <el-form-item label="特征权重">
+                  <el-button type="primary" plain @click="showWeightDialog = true" style="width: 100%;">
+                    调整特征权重比
+                  </el-button>
+                  <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px;">
+                    权重越高，模型对该特征的关注度越大
+                  </div>
+                </el-form-item>
               </el-form>
               <el-button
                 type="primary"
@@ -377,6 +385,36 @@
         </el-row>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 特征权重调整弹窗 -->
+    <el-dialog v-model="showWeightDialog" title="调整特征权重" width="700px" :close-on-click-modal="false">
+      <div style="margin-bottom: 12px; font-size: 13px; color: var(--el-text-color-secondary);">
+        拖动滑块调整各特征对模型的影响权重（0 = 不关注，1 = 完全关注）。权重越高，模型训练时对该特征的关注度越大。
+      </div>
+      <el-row :gutter="16">
+        <el-col :span="12" v-for="(name, idx) in FEATURE_NAMES" :key="name" style="margin-bottom: 12px;">
+          <div style="font-size: 13px; margin-bottom: 4px; font-weight: 500;">
+            {{ featureNameMap[name] || name }}
+            <span style="float: right; color: var(--el-color-primary); font-weight: 700;">
+              {{ featureWeights[name]?.toFixed(2) }}
+            </span>
+          </div>
+          <el-slider
+            v-model="featureWeights[name]"
+            :min="0" :max="1" :step="0.05"
+            :show-tooltip="false"
+          />
+        </el-col>
+      </el-row>
+      <div style="margin-top: 8px; display: flex; gap: 8px;">
+        <el-button size="small" @click="resetWeights">重置为均匀权重</el-button>
+        <el-button size="small" @click="setAutoWeights">根据相关性自动设置</el-button>
+      </div>
+      <template #footer>
+        <el-button @click="showWeightDialog = false">取消</el-button>
+        <el-button type="primary" @click="showWeightDialog = false">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -428,6 +466,21 @@ const trainForm = reactive({
   window_size: 10, hidden_dim: 128, num_layers: 2, dropout: 0.2
 })
 const targetRangeStr = ref('14.0,15.0')
+const showWeightDialog = ref(false)
+const featureWeights = reactive({
+  proc_steam_vol: 1.0,
+  proc_air_temp: 1.0,
+  input_moist: 1.0,
+  input_moist_SP: 1.0,
+  moist_remove: 1.0,
+  out_moist_SP: 1.0,
+  out_temp: 1.0,
+  mat_flow_PV: 1.0,
+  total_mat_flow: 1.0,
+  env_temp: 1.0,
+  env_moist: 1.0,
+  brandID: 1.0
+})
 const versions = ref([])
 
 // 预测
@@ -648,6 +701,28 @@ async function showModelSelector() {
   }
 }
 
+// 重置权重
+function resetWeights() {
+  FEATURE_NAMES.forEach(n => { featureWeights[n] = 1.0 })
+}
+
+// 根据相关性自动设置权重
+function setAutoWeights() {
+  if (!analysisData.value?.correlations) {
+    ElMessage.warning('请先进行数据分析')
+    return
+  }
+  const corrs = analysisData.value.correlations
+  // 将相关性绝对值映射到 0.3~1.0 范围
+  const vals = Object.values(corrs).map(Math.abs)
+  const maxVal = Math.max(...vals)
+  FEATURE_NAMES.forEach(n => {
+    const c = Math.abs(corrs[n] || 0)
+    featureWeights[n] = maxVal > 0 ? Math.round((0.3 + 0.7 * c / maxVal) * 100) / 100 : 1.0
+  })
+  ElMessage.success('已根据相关性自动设置权重')
+}
+
 // 执行训练 (baseVersion 可选，用于微调已有模型)
 function doStartTraining(baseVersion) {
   training.value = true
@@ -658,7 +733,8 @@ function doStartTraining(baseVersion) {
   trainLossHistory.test = []
 
   const tr = targetRangeStr.value.split(',').map(Number)
-  const params = { ...trainForm, target_range: tr.join(',') }
+  const fw = FEATURE_NAMES.map(n => featureWeights[n])
+  const params = { ...trainForm, target_range: tr.join(','), feature_weights: fw.join(',') }
   if (baseVersion) params.base_version = baseVersion
   const qs = new URLSearchParams(params).toString()
 
