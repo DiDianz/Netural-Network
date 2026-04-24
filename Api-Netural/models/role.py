@@ -12,7 +12,7 @@ class SysRole(Base):
 
     role_id = Column(Integer, primary_key=True, autoincrement=True, comment="角色ID")
     role_name = Column(String(30), nullable=False, comment="角色名称")
-    role_key = Column(String(100), nullable=False, comment="角色权限字符串")
+    role_key = Column(String(100), nullable=False, unique=True, comment="角色权限字符串")
     sort = Column(Integer, nullable=False, comment="显示顺序")
     status = Column(String(1), nullable=False, comment="状态(0正常 1停用)")
     del_flag = Column(String(1), default="0", comment="删除标志")
