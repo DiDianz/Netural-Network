@@ -1,4 +1,4 @@
-// src/router/index.js — 添加 PLC 设备管理路由
+// src/router/index.js — 集成路由日志守卫
 import { createRouter, createWebHistory } from 'vue-router'
 import { getToken } from '../utils/auth'
 import Layout from '../layout/index.vue'
@@ -210,5 +210,9 @@ router.beforeEach(async (to, from, next) => {
     next('/login')
   }
 })
+
+// ★ 注册路由日志守卫（afterEach 在路由跳转完成后记录）
+import { setupRouterLogger } from '../utils/logger'
+setupRouterLogger(router)
 
 export default router
