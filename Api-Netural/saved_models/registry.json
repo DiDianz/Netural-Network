@@ -1,26 +1,44 @@
 {
-  "d566cfd3": {
-    "model_id": "d566cfd3",
+  "lstm_best": {
+    "model_id": "lstm_best",
     "model_key": "lstm",
     "display_name": "LSTM + Attention",
-    "name": "LSTM + Attention_20260417_50è½®_val1.0089",
-    "filename": "lstm_d566cfd3.pth",
-    "epochs": 50,
-    "best_val_loss": 1.008905,
-    "trained_at": "2026-04-17 14:36:33",
-    "remark": "éšæœºæ•°æ®è®­ç»ƒ 50è½®",
-    "file_size_kb": 1095.3
+    "name": "LSTM + Attention_20260417_best",
+    "filename": "lstm_best.pth",
+    "epochs": 0,
+    "best_val_loss": 0,
+    "trained_at": "2026-04-17 15:21:35",
+    "remark": "´Ó best È¨ÖØÎÄ¼ş×Ô¶¯Í¬²½",
+    "file_size_kb": 1095.3,
+    "schema_id": "default",
+    "input_dim": 11
   },
-  "cc52f83d": {
-    "model_id": "cc52f83d",
+  "gru_best": {
+    "model_id": "gru_best",
     "model_key": "gru",
     "display_name": "GRU",
-    "name": "GRU_20260420_50è½®_val0.0128",
-    "filename": "gru_cc52f83d.pth",
-    "epochs": 50,
-    "best_val_loss": 0.012811,
-    "trained_at": "2026-04-20 14:34:47",
-    "remark": "å“ç‰Œæ•°=2, æ ·æœ¬æ•°=66",
-    "file_size_kb": 636.7
+    "name": "GRU_20260420_best",
+    "filename": "gru_best.pth",
+    "epochs": 0,
+    "best_val_loss": 0,
+    "trained_at": "2026-04-20 14:34:34",
+    "remark": "´Ó best È¨ÖØÎÄ¼ş×Ô¶¯Í¬²½",
+    "file_size_kb": 636.7,
+    "schema_id": "default",
+    "input_dim": 11
+  },
+  "transformer_best": {
+    "model_id": "transformer_best",
+    "model_key": "transformer",
+    "display_name": "Transformer",
+    "name": "Transformer_20260417_best",
+    "filename": "transformer_best.pth",
+    "epochs": 0,
+    "best_val_loss": 0,
+    "trained_at": "2026-04-17 15:21:35",
+    "remark": "´Ó best È¨ÖØÎÄ¼ş×Ô¶¯Í¬²½",
+    "file_size_kb": 1863.4,
+    "schema_id": "default",
+    "input_dim": 11
   }
 }

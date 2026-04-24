@@ -1,0 +1,148 @@
+[
+  {
+    "id": "default",
+    "name": "烘丝机默认方案",
+    "description": "系统内置的 11 特征方案",
+    "features": [
+      {
+        "name": "proc_steam_vol",
+        "label": "蒸汽流量",
+        "weight": 1.0
+      },
+      {
+        "name": "proc_air_temp",
+        "label": "热风温度",
+        "weight": 1.0
+      },
+      {
+        "name": "input_moist",
+        "label": "入口水分",
+        "weight": 1.0
+      },
+      {
+        "name": "input_moist_SP",
+        "label": "入口水分设定值",
+        "weight": 1.0
+      },
+      {
+        "name": "moist_remove",
+        "label": "排湿量",
+        "weight": 1.0
+      },
+      {
+        "name": "out_moist_SP",
+        "label": "出口水分设定值",
+        "weight": 1.0
+      },
+      {
+        "name": "out_temp",
+        "label": "出口温度",
+        "weight": 1.0
+      },
+      {
+        "name": "mat_flow_PV",
+        "label": "物料流量实际值",
+        "weight": 1.0
+      },
+      {
+        "name": "total_mat_flow",
+        "label": "累计物料流量",
+        "weight": 1.0
+      },
+      {
+        "name": "env_temp",
+        "label": "环境温度",
+        "weight": 1.0
+      },
+      {
+        "name": "env_moist",
+        "label": "环境湿度",
+        "weight": 1.0
+      }
+    ],
+    "target": {
+      "name": "out_moist",
+      "label": "出口水分"
+    },
+    "brand_column": {
+      "name": "brandID",
+      "label": "品牌标识"
+    },
+    "is_builtin": true,
+    "created_at": "2025-01-01 00:00:00",
+    "updated_at": "2025-01-01 00:00:00"
+  },
+  {
+    "id": "0457b2c0",
+    "name": "烘丝机默认方案 (副本)",
+    "description": "系统内置的 11 特征方案",
+    "features": [
+      {
+        "name": "proc_steam_vol",
+        "label": "蒸汽流量",
+        "weight": 1.0
+      },
+      {
+        "name": "proc_air_temp",
+        "label": "热风温度",
+        "weight": 1.0
+      },
+      {
+        "name": "input_moist",
+        "label": "入口水分",
+        "weight": 1.0
+      },
+      {
+        "name": "input_moist_SP",
+        "label": "入口水分设定值",
+        "weight": 1.0
+      },
+      {
+        "name": "moist_remove",
+        "label": "排湿量",
+        "weight": 1.0
+      },
+      {
+        "name": "out_moist_SP",
+        "label": "出口水分设定值",
+        "weight": 1.0
+      },
+      {
+        "name": "out_temp",
+        "label": "出口温度",
+        "weight": 1.0
+      },
+      {
+        "name": "mat_flow_PV",
+        "label": "物料流量实际值",
+        "weight": 1.0
+      },
+      {
+        "name": "total_mat_flow",
+        "label": "累计物料流量",
+        "weight": 1.0
+      },
+      {
+        "name": "env_temp",
+        "label": "环境温度",
+        "weight": 1.0
+      },
+      {
+        "name": "env_moist",
+        "label": "环境湿度",
+        "weight": 1.0
+      }
+    ],
+    "target": {
+      "name": "out_moist",
+      "label": "出口水分"
+    },
+    "brand_column": {
+      "name": "brandID",
+      "label": "品牌标识"
+    },
+    "is_builtin": false,
+    "created_at": "2026-04-23 15:44:35",
+    "updated_at": "2026-04-23 15:44:35"
+  }
+]
