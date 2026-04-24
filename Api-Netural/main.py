@@ -107,21 +107,33 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
-    """404 也记录"""
-    try:
-        from core.logger import write_log
-        write_log(
-            log_type="error",
-            module="路由",
-            action="404-NotFound",
-            method=request.method,
-            url=request.url.path,
-            status=404,
-            error_msg=f"路径不存在: {request.url.path}",
-        )
-    except Exception:
-        pass
-    return JSONResponse(status_code=404, content={"detail": "路径不存在"})
+    """404 处理 — 只对 API 路径返回 JSON，前端路由返回空响应"""
+    path = request.url.path
+
+    # 如果是 API 路径（以 / 开头且匹配已知前缀），返回 JSON + 记录日志
+    api_prefixes = (
+        "/auth", "/system", "/predict", "/model", "/upload",
+        "/plc", "/instance", "/dryer", "/feature", "/log",
+        "/ws", "/health", "/menu", "/role", "/user",
+    )
+    if any(path.startswith(p) for p in api_prefixes):
+        try:
+            from core.logger import write_log
+            write_log(
+                log_type="error",
+                module="路由",
+                action="404-NotFound",
+                method=request.method,
+                url=path,
+                status=404,
+                error_msg=f"API路径不存在: {path}",
+            )
+        except Exception:
+            pass
+        return JSONResponse(status_code=404, content={"detail": "路径不存在"})
+
+    # 前端路由 / 静态资源 — 不返回 JSON，让 Vite 或 Nginx 处理
+    return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
 
 # ========== 操作日志中间件（增强版） ==========
