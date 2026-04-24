@@ -85,6 +85,21 @@ def _migrate_plc_port(db):
         print(f"PLC port 迁移跳过: {e}")
 
 
+def _migrate_operation_log_type(db):
+    """为 operation_log 表添加 log_type 列（全链路日志）"""
+    try:
+        db.execute(text("SELECT TOP 1 log_type FROM operation_log"))
+        print("operation_log.log_type 列已存在")
+    except Exception:
+        try:
+            db.execute(text("ALTER TABLE operation_log ADD log_type NVARCHAR(20) DEFAULT 'api'"))
+            db.commit()
+            print("operation_log 表已添加 log_type 列")
+        except Exception as e:
+            db.rollback()
+            print(f"operation_log log_type 迁移失败: {e}")
+
+
 def _init_instance_type_flags(db):
     """为已有的可作为实例类型的菜单设置标记"""
     try:
@@ -260,6 +275,7 @@ def init_db():
             _migrate_prediction_instance(db)
             _migrate_menu_as_instance_type(db)
             _migrate_plc_port(db)
+            _migrate_operation_log_type(db)
             _sync_saved_models_to_db(db)
             return
 
