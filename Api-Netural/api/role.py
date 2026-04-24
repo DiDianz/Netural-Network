@@ -29,8 +29,8 @@ async def list_roles(
     if status:
         query = query.filter(SysRole.status == status)
 
-    total = query.count()
-    roles = query.order_by(SysRole.sort).offset((page - 1) * page_size).limit(page_size).all()
+    total = query.distinct().count()
+    roles = query.distinct().order_by(SysRole.sort).offset((page - 1) * page_size).limit(page_size).all()
 
     rows = []
     for r in roles:
