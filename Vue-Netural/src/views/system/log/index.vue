@@ -1,10 +1,10 @@
-<!-- src/views/system/log/index.vue -->
+<!-- src/views/system/log/index.vue — 增强版：支持日志类型分类筛选 -->
 <template>
   <div class="log-page">
     <div class="page-header">
       <div class="header-left">
         <span class="page-title">操作日志</span>
-        <span class="page-desc">记录所有用户操作和系统错误</span>
+        <span class="page-desc">覆盖 API调用 / 数据库操作 / 系统错误 / 前端操作</span>
       </div>
       <div class="header-actions">
         <el-popconfirm
@@ -25,8 +25,30 @@
       </div>
     </div>
 
+    <!-- 统计卡片 -->
+    <div class="stats-bar" v-if="stats">
+      <div class="stat-card">
+        <div class="stat-value">{{ stats.today_total || 0 }}</div>
+        <div class="stat-label">今日日志</div>
+      </div>
+      <div class="stat-card stat-error">
+        <div class="stat-value">{{ stats.today_error || 0 }}</div>
+        <div class="stat-label">今日错误</div>
+      </div>
+      <div class="stat-card" v-for="(count, type) in stats.by_type" :key="type">
+        <div class="stat-value">{{ count }}</div>
+        <div class="stat-label">{{ typeLabel(type) }}</div>
+      </div>
+    </div>
+
     <!-- 筛选栏 -->
     <div class="filter-bar">
+      <el-select v-model="filters.log_type" placeholder="日志类型" clearable style="width: 140px" @change="loadLogs">
+        <el-option label="API调用" value="api" />
+        <el-option label="数据库操作" value="db" />
+        <el-option label="系统错误" value="error" />
+        <el-option label="前端操作" value="frontend" />
+      </el-select>
       <el-input v-model="filters.keyword" placeholder="搜索用户/模块/动作/地址" clearable style="width: 260px" @keyup.enter="loadLogs" />
       <el-select v-model="filters.module" placeholder="模块" clearable style="width: 140px" @change="loadLogs">
         <el-option v-for="m in modules" :key="m" :label="m" :value="m" />
@@ -54,6 +76,11 @@
     <!-- 表格 -->
     <el-table :data="logs" stripe v-loading="loading" empty-text="暂无操作日志" style="width: 100%">
       <el-table-column prop="id" label="ID" width="70" align="center" />
+      <el-table-column prop="log_type" label="类型" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="logTypeTag(row.log_type)">{{ typeLabel(row.log_type) }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="user_name" label="操作用户" width="100">
         <template #default="{ row }">
           <span>{{ row.user_name || '—' }}</span>
@@ -65,7 +92,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="action" label="操作" width="160" show-overflow-tooltip />
-      <el-table-column prop="method" label="方法" width="80" align="center">
+      <el-table-column prop="method" label="方法" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="methodTagType(row.method)" size="small">{{ row.method }}</el-tag>
         </template>
@@ -119,6 +146,9 @@
     <el-dialog v-model="detailVisible" title="操作详情" width="600px">
       <el-descriptions :column="1" border v-if="currentLog">
         <el-descriptions-item label="ID">{{ currentLog.id }}</el-descriptions-item>
+        <el-descriptions-item label="日志类型">
+          <el-tag :type="logTypeTag(currentLog.log_type)">{{ typeLabel(currentLog.log_type) }}</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="操作用户">{{ currentLog.user_name || '—' }}</el-descriptions-item>
         <el-descriptions-item label="模块">{{ currentLog.module }}</el-descriptions-item>
         <el-descriptions-item label="操作">{{ currentLog.action }}</el-descriptions-item>
@@ -147,7 +177,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getLogList, getLogModules, clearLogs } from '../../../api/log'
+import { getLogList, getLogModules, clearLogs, getLogStats } from '../../api/log'
 
 const logs = ref([])
 const loading = ref(false)
@@ -158,11 +188,13 @@ const modules = ref([])
 const dateRange = ref(null)
 const clearing = ref(false)
 const clearDays = ref(30)
+const stats = ref(null)
 
 const detailVisible = ref(false)
 const currentLog = ref(null)
 
 const filters = reactive({
+  log_type: '',
   keyword: '',
   module: '',
   status: null,
@@ -173,6 +205,7 @@ const filters = reactive({
 onMounted(() => {
   loadLogs()
   loadModules()
+  loadStats()
 })
 
 async function loadLogs() {
@@ -182,6 +215,7 @@ async function loadLogs() {
       limit: pageSize.value,
       offset: (currentPage.value - 1) * pageSize.value,
     }
+    if (filters.log_type) params.log_type = filters.log_type
     if (filters.keyword) params.keyword = filters.keyword
     if (filters.module) params.module = filters.module
     if (filters.status != null) params.status = filters.status
@@ -205,6 +239,13 @@ async function loadModules() {
   } catch {}
 }
 
+async function loadStats() {
+  try {
+    const res = await getLogStats(7)
+    stats.value = res.data || {}
+  } catch {}
+}
+
 function handleDateChange(val) {
   if (val && val.length === 2) {
     filters.start_time = val[0]
@@ -217,6 +258,7 @@ function handleDateChange(val) {
 }
 
 function resetFilters() {
+  filters.log_type = ''
   filters.keyword = ''
   filters.module = ''
   filters.status = null
@@ -233,6 +275,7 @@ async function handleClear() {
     const res = await clearLogs(clearDays.value)
     ElMessage.success(res.msg || '清理成功')
     await loadLogs()
+    await loadStats()
   } catch (e) {
     ElMessage.error('清理失败')
   } finally {
@@ -245,8 +288,19 @@ function showDetail(row) {
   detailVisible.value = true
 }
 
+function typeLabel(type) {
+  return { api: 'API调用', db: '数据库', error: '错误', frontend: '前端操作' }[type] || type || 'API调用'
+}
+
+function logTypeTag(type) {
+  return { api: '', db: 'warning', error: 'danger', frontend: 'success' }[type] || 'info'
+}
+
 function methodTagType(method) {
-  return { GET: 'info', POST: 'success', PUT: 'warning', DELETE: 'danger' }[method] || 'info'
+  return {
+    GET: 'info', POST: 'success', PUT: 'warning', DELETE: 'danger',
+    INSERT: 'success', UPDATE: 'warning', NAVIGATE: '',
+  }[method] || 'info'
 }
 
 function moduleTagType(module) {
@@ -255,6 +309,7 @@ function moduleTagType(module) {
     '预测': 'warning', '模型管理': 'warning', 'PLC管理': 'danger',
     '预测实例': 'warning', '烘丝机预测': 'danger', '特征方案': 'warning',
     '文件上传': 'info', '系统设置': '', '操作日志': 'info',
+    '页面访问': 'success', 'Vue组件': 'danger', 'JavaScript': 'danger',
   }
   return map[module] || 'info'
 }
@@ -265,87 +320,97 @@ function moduleTagType(module) {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  padding: 20px;
 }
-
 .page-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-secondary);
-  border-radius: 12px;
+  align-items: center;
 }
-
 .header-left {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.page-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.page-desc {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.filter-bar {
-  display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
-  padding: 16px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-secondary);
-  border-radius: 12px;
-  flex-wrap: wrap;
 }
-
-.mono-url {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.error-msg {
-  color: var(--danger);
-  font-size: 12px;
-}
-
-.slow-ms {
-  color: var(--warning);
+.page-title {
+  font-size: 20px;
   font-weight: 600;
 }
-
-.params-pre {
-  margin: 0;
-  font-size: 12px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 200px;
-  overflow-y: auto;
-  background: var(--bg-secondary);
-  padding: 8px;
-  border-radius: 6px;
+.page-desc {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
+/* 统计卡片 */
+.stats-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.stat-card {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 12px 20px;
+  min-width: 100px;
+  text-align: center;
+}
+.stat-card.stat-error {
+  border-color: var(--el-color-danger-light-5);
+}
+.stat-card.stat-error .stat-value {
+  color: var(--el-color-danger);
+}
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--el-color-primary);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 4px;
+}
+
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* 表格 */
+.mono-url {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+.error-msg {
+  color: var(--el-color-danger);
+  font-size: 12px;
+}
+.slow-ms {
+  color: var(--el-color-warning);
+  font-weight: 600;
+}
+.params-pre {
+  background: var(--el-fill-color-light);
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
-  padding: 12px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-secondary);
-  border-radius: 12px;
+  padding-top: 12px;
 }
 </style>
