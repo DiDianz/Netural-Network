@@ -3,12 +3,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
-// 后端实际的 API 路由路径（不含前端页面路由）
-const BACKEND_API_PREFIXES = [
-  '/auth', '/predict', '/model', '/upload', '/plc',
-  '/instance', '/dryer', '/feature', '/log', '/ws', '/health',
-  // system 子路由 — 只代理真正的 API 端点
-  '/system/user/', '/system/role/', '/system/menu/', '/system/config/',
+// 后端 API 路由前缀
+const API_PREFIXES = [
+  '/auth', '/system', '/predict', '/model', '/upload',
+  '/plc', '/instance', '/dryer', '/feature', '/log',
+  '/ws', '/health', '/menu', '/role', '/user',
 ]
 
 export default defineConfig({
@@ -23,15 +22,19 @@ export default defineConfig({
     host: true,
     open: false,
     proxy: {
-      // 使用函数式代理，精确区分 API 请求和前端路由
-      '^/(auth|predict|model|upload|plc|instance|dryer|feature|log|ws|health)(/|$)': {
+      // 匹配所有可能的 API 前缀
+      ...Object.fromEntries(API_PREFIXES.map(prefix => [prefix, {
         target: 'http://localhost:8000',
         changeOrigin: true,
-      },
-      '^/system/(user|role|menu|config)/': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
+        // bypass: 如果是浏览器页面导航（Accept 包含 text/html），不代理，让 Vite SPA fallback 处理
+        bypass(req) {
+          const accept = req.headers.accept || ''
+          // 浏览器页面请求会带 text/html，API 请求不会
+          if (accept.includes('text/html') && !accept.includes('application/json')) {
+            return req.url  // 返回原始 URL = 不代理，走 Vite SPA fallback
+          }
+        },
+      }])),
     }
   }
 })
