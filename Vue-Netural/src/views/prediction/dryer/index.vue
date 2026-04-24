@@ -157,10 +157,10 @@
             </el-card>
           </el-col>
 
-          <!-- 右: 训练进度 -->
+          <!-- 右: 训练流程 + 进度 -->
           <el-col :span="16">
-            <!-- 训练流程可视化 -->
-            <el-card shadow="hover" v-if="(training || trainingDone || trainResult) && hasPhaseEvents">
+            <!-- 训练流程可视化 (始终展示) -->
+            <el-card shadow="hover">
               <template #header>
                 训练流程
                 <el-tag v-if="trainingDone" type="success" size="small" style="margin-left: 8px;">
@@ -193,6 +193,9 @@
                   <template #description>
                     <div v-if="phase.detail" class="phase-detail">
                       {{ phase.detail }}
+                    </div>
+                    <div v-else class="phase-hint">
+                      {{ phase.hint }}
                     </div>
                   </template>
                 </el-step>
@@ -554,10 +557,10 @@ const trainLossHistory = reactive({ train: [], test: [] })
 // 训练流程阶段
 const hasPhaseEvents = ref(false)
 const trainingPhases = reactive([
-  { step: 1, key: 'data',   title: '数据准备',   icon: '📊', status: 'wait', detail: '' },
-  { step: 2, key: 'build',  title: '模型构建',   icon: '🏗️', status: 'wait', detail: '' },
-  { step: 3, key: 'train',  title: '模型训练',   icon: '🔄', status: 'wait', detail: '' },
-  { step: 4, key: 'save',   title: '保存与注册', icon: '✅', status: 'wait', detail: '' },
+  { step: 1, key: 'data',   title: '数据准备',   icon: '📊', status: 'wait', detail: '', hint: '加载训练数据 → Z-Score 标准化 → 创建滑动窗口序列 → 按比例划分训练集/测试集' },
+  { step: 2, key: 'build',  title: '模型构建',   icon: '🏗️', status: 'wait', detail: '', hint: '构建 DryerModel (FeatureWeight → LSTM → MultiHeadAttention → FC)，统计参数量' },
+  { step: 3, key: 'train',  title: '模型训练',   icon: '🔄', status: 'wait', detail: '', hint: 'AdamW 优化器 + CosineAnnealing 调度器，逐轮训练并评估 R² / Loss，保存最优模型' },
+  { step: 4, key: 'save',   title: '保存与注册', icon: '✅', status: 'wait', detail: '', hint: '保存 .pth 模型文件 → 注册版本到 registry → 同步记录到数据库' },
 ])
 
 const trainProgressPercent = computed(() => {
@@ -1147,6 +1150,14 @@ function renderPLCChart() {
   line-height: 1.6;
   padding: 4px 0 4px 4px;
   border-left: 2px solid var(--el-color-primary-light-5);
+  margin-top: 4px;
+}
+.phase-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  line-height: 1.6;
+  padding: 4px 0 4px 4px;
+  border-left: 2px solid var(--el-border-color-lighter);
   margin-top: 4px;
 }
 .target-ok {
