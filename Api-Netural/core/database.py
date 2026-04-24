@@ -117,29 +117,59 @@ def _deduplicate_roles(db):
 
         if not dupes:
             print("角色表无重复数据")
-            return
+        else:
+            total_deleted = 0
+            for role_key, keep_id in dupes:
+                ids = db.execute(text(
+                    "SELECT role_id FROM sys_role WHERE role_key = :key AND role_id != :keep"
+                ), {"key": role_key, "keep": keep_id}).fetchall()
 
-        total_deleted = 0
-        for role_key, keep_id in dupes:
-            # 获取该 role_key 下所有 role_id（排除要保留的）
-            ids = db.execute(text(
-                "SELECT role_id FROM sys_role WHERE role_key = :key AND role_id != :keep"
-            ), {"key": role_key, "keep": keep_id}).fetchall()
+                for (dup_id,) in ids:
+                    db.execute(sys_role_menu.delete().where(sys_role_menu.c.role_id == dup_id))
+                    db.execute(sys_user_role.delete().where(sys_user_role.c.role_id == dup_id))
+                    db.execute(text("DELETE FROM sys_role WHERE role_id = :id"), {"id": dup_id})
+                    total_deleted += 1
+                    print(f"  删除重复角色: role_key={role_key}, role_id={dup_id} (保留 {keep_id})")
 
-            for (dup_id,) in ids:
-                # 先删关联表
-                db.execute(sys_role_menu.delete().where(sys_role_menu.c.role_id == dup_id))
-                db.execute(sys_user_role.delete().where(sys_user_role.c.role_id == dup_id))
-                # 再删角色
-                db.execute(text("DELETE FROM sys_role WHERE role_id = :id"), {"id": dup_id})
-                total_deleted += 1
-                print(f"  删除重复角色: role_key={role_key}, role_id={dup_id} (保留 {keep_id})")
+            db.commit()
+            print(f"角色去重完成，共删除 {total_deleted} 条重复记录")
 
-        db.commit()
-        print(f"角色去重完成，共删除 {total_deleted} 条重复记录")
+        # 确保基础角色存在
+        _ensure_base_roles(db)
     except Exception as e:
         db.rollback()
         print(f"角色去重失败: {e}")
+
+
+def _ensure_base_roles(db):
+    """确保「管理员」和「普通用户」两个基础角色一定存在"""
+    try:
+        from models.role import SysRole
+
+        existing_keys = {r[0] for r in db.execute(text(
+            "SELECT role_key FROM sys_role"
+        )).fetchall()}
+
+        added = []
+
+        if "admin" not in existing_keys:
+            db.add(SysRole(role_name="管理员", role_key="admin", sort=1,
+                           status="0", del_flag="0", remark="超级管理员"))
+            added.append("管理员")
+
+        if "user" not in existing_keys:
+            db.add(SysRole(role_name="普通用户", role_key="user", sort=2,
+                           status="0", del_flag="0", remark="普通用户"))
+            added.append("普通用户")
+
+        if added:
+            db.commit()
+            print(f"已补充基础角色: {', '.join(added)}")
+        else:
+            print("基础角色已存在")
+    except Exception as e:
+        db.rollback()
+        print(f"补充基础角色失败: {e}")
 
 
 def _init_instance_type_flags(db):
