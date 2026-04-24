@@ -21,8 +21,9 @@ export default defineConfig({
     port: 5173,
     host: true,
     open: false,
+    // HMR 配置 — 确保 WebSocket 连接正常
     hmr: {
-      overlay: false
+      overlay: true,
     },
     proxy: {
       // 所有后端 API 路由统一代理到 8000
