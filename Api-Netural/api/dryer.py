@@ -279,7 +279,11 @@ async def train_model(
 
     async def event_generator():
         try:
-            # ---- 解析参数 ----
+            # ============================================================
+            # Phase 1: 数据准备
+            # ============================================================
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'data', 'step': 1, 'total_steps': 4, 'status': 'running', 'title': '数据准备', 'detail': '正在解析训练参数...'}, ensure_ascii=False)}\n\n"
+
             parsed_fw = [float(w.strip()) for w in feature_weights.split(',') if w.strip()] if feature_weights else None
             parsed_tr = [float(x.strip()) for x in target_range.split(',')] if target_range else [14.0, 15.0]
 
@@ -288,28 +292,34 @@ async def train_model(
                 yield f"data: {json.dumps({'type': 'error', 'msg': '请先上传训练数据'})}\n\n"
                 return
 
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'data', 'step': 1, 'total_steps': 4, 'status': 'running', 'title': '数据准备', 'detail': '正在加载训练数据...'}, ensure_ascii=False)}\n\n"
             data = np.load(data_file, allow_pickle=True)
             n_features = len(FEATURE_NAMES)
             features = data[:, :n_features].astype(np.float32)
             target = data[:, n_features].astype(np.float32)
 
-            # 标准化
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'data', 'step': 1, 'total_steps': 4, 'status': 'running', 'title': '数据准备', 'detail': f'已加载 {len(data)} 条数据，正在进行 Z-Score 标准化...'}, ensure_ascii=False)}\n\n"
             features_norm, feat_stats = _normalize(features)
             target_norm, tgt_stats = _normalize(target.reshape(-1, 1))
 
-            # 创建序列
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'data', 'step': 1, 'total_steps': 4, 'status': 'running', 'title': '数据准备', 'detail': f'正在创建滑动窗口序列 (窗口大小={window_size})...'}, ensure_ascii=False)}\n\n"
             X, y = _create_sequences(features_norm, target_norm.squeeze(), window_size)
 
             if len(X) < 10:
                 yield f"data: {json.dumps({'type': 'error', 'msg': f'数据量不足: 仅 {len(X)} 个序列，请减小窗口大小或增加数据量'})}\n\n"
                 return
 
-            # 训练/测试划分
             split = int(len(X) * (1 - test_ratio))
             X_train, X_test = X[:split], X[split:]
             y_train, y_test = y[:split], y[split:]
 
-            # 转 Tensor
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'data', 'step': 1, 'total_steps': 4, 'status': 'done', 'title': '数据准备', 'detail': f'完成! 共 {len(X)} 个序列 → 训练集 {len(X_train)} / 测试集 {len(X_test)} ({int(test_ratio*100)}% 测试)'}, ensure_ascii=False)}\n\n"
+
+            # ============================================================
+            # Phase 2: 模型构建
+            # ============================================================
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'build', 'step': 2, 'total_steps': 4, 'status': 'running', 'title': '模型构建', 'detail': f'正在构建 DryerModel (LSTM+Attention)...'}, ensure_ascii=False)}\n\n"
+
             train_ds = TensorDataset(
                 torch.tensor(X_train), torch.tensor(y_train).unsqueeze(-1)
             )
@@ -319,13 +329,14 @@ async def train_model(
             train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
             test_loader = DataLoader(test_ds, batch_size=batch_size)
 
-            # 构建模型
             model = DryerModel(
                 input_dim=n_features,
                 hidden_dim=hidden_dim,
                 num_layers=num_layers,
                 dropout=dropout
             )
+
+            build_detail = f'模型参数: 输入维度={n_features}, 隐藏层={hidden_dim}, LSTM层数={num_layers}, Dropout={dropout}'
 
             # 如果指定了基础模型，加载已有权重继续训练
             if base_version:
@@ -334,11 +345,11 @@ async def train_model(
                     checkpoint = torch.load(base_path, map_location="cpu", weights_only=False)
                     try:
                         model.load_state_dict(checkpoint['model_state'], strict=False)
-                        yield f"data: {json.dumps({'type': 'progress', 'epoch': 0, 'total_epochs': epochs, 'train_loss': 0, 'test_loss': 0, 'r2': 0, 'lr': learning_rate, 'best_loss': 0, 'feature_weights': model.get_feature_weights(), 'msg': f'已加载基础模型: {base_version}，继续训练中...'}, ensure_ascii=False)}\n\n"
+                        build_detail = f'已加载基础模型 {base_version}，将在此基础上继续训练（微调）'
                     except Exception as e:
-                        yield f"data: {json.dumps({'type': 'progress', 'epoch': 0, 'total_epochs': epochs, 'train_loss': 0, 'test_loss': 0, 'r2': 0, 'lr': learning_rate, 'best_loss': 0, 'feature_weights': [1.0]*n_features, 'msg': f'基础模型权重不匹配({str(e)})，从头训练'}, ensure_ascii=False)}\n\n"
+                        build_detail = f'基础模型权重不匹配({str(e)})，将从头训练'
                 else:
-                    yield f"data: {json.dumps({'type': 'progress', 'epoch': 0, 'total_epochs': epochs, 'train_loss': 0, 'test_loss': 0, 'r2': 0, 'lr': learning_rate, 'best_loss': 0, 'feature_weights': [1.0]*n_features, 'msg': f'基础模型 {base_version} 不存在，从头训练'}, ensure_ascii=False)}\n\n"
+                    build_detail = f'基础模型 {base_version} 不存在，将从头训练'
 
             # 设置初始特征权重
             if parsed_fw and len(parsed_fw) == n_features:
@@ -354,16 +365,28 @@ async def train_model(
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model = model.to(device)
 
+            # 统计模型参数量
+            total_params = sum(p.numel() for p in model.parameters())
+            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            device_name = "GPU (CUDA)" if torch.cuda.is_available() else "CPU"
+
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'build', 'step': 2, 'total_steps': 4, 'status': 'done', 'title': '模型构建', 'detail': f'{build_detail} | 总参数: {total_params:,} (可训练: {trainable_params:,}) | 设备: {device_name}'}, ensure_ascii=False)}\n\n"
+
             optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
             mse_loss = nn.MSELoss()
 
-            # 版本号
             version = f"v{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
             best_loss = float('inf')
+            best_epoch = 0
             train_losses = []
             test_losses = []
+
+            # ============================================================
+            # Phase 3: 模型训练
+            # ============================================================
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'train', 'step': 3, 'total_steps': 4, 'status': 'running', 'title': '模型训练', 'detail': f'开始训练: 共 {epochs} 轮, 批大小={batch_size}, 学习率={learning_rate}, 优化器=AdamW, 调度器=CosineAnnealing'}, ensure_ascii=False)}\n\n"
 
             for epoch in range(1, epochs + 1):
                 # ---- Train ----
@@ -405,8 +428,10 @@ async def train_model(
                 r2 = float(1 - ss_res / (ss_tot + 1e-8))
 
                 # 保存最优
-                if test_loss < best_loss:
+                improved = test_loss < best_loss
+                if improved:
                     best_loss = test_loss
+                    best_epoch = epoch
                     save_path = MODEL_DIR / f"{version}.pth"
                     torch.save({
                         'model_state': model.state_dict(),
@@ -427,7 +452,7 @@ async def train_model(
                         }
                     }, save_path)
 
-                # 进度推送
+                # 进度推送 (每轮都发)
                 progress = {
                     "type": "progress",
                     "epoch": epoch,
@@ -437,11 +462,19 @@ async def train_model(
                     "r2": round(r2, 4),
                     "lr": round(scheduler.get_last_lr()[0], 7),
                     "best_loss": round(best_loss, 6),
+                    "best_epoch": best_epoch,
+                    "improved": improved,
                     "feature_weights": model.get_feature_weights()
                 }
                 yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
 
-            # 训练完成 — 注册版本
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'train', 'step': 3, 'total_steps': 4, 'status': 'done', 'title': '模型训练', 'detail': f'训练完成! 最优 Epoch={best_epoch}, Best Loss={round(best_loss, 6)}, 最终 R²={round(r2, 4)}'}, ensure_ascii=False)}\n\n"
+
+            # ============================================================
+            # Phase 4: 保存与注册
+            # ============================================================
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'save', 'step': 4, 'total_steps': 4, 'status': 'running', 'title': '保存与注册', 'detail': '正在注册模型版本...'}, ensure_ascii=False)}\n\n"
+
             registry = _load_registry()
             registry["versions"][version] = {
                 "created_at": datetime.now().isoformat(),
@@ -465,11 +498,14 @@ async def train_model(
             registry["active_version"] = version
             _save_registry(registry)
 
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'save', 'step': 4, 'total_steps': 4, 'status': 'running', 'title': '保存与注册', 'detail': '正在同步到数据库...'}, ensure_ascii=False)}\n\n"
+
             # 同步到数据库
             try:
                 from models.saved_model import SavedModel
                 from core.database import SessionLocal
                 _db = SessionLocal()
+                file_size = round((MODEL_DIR / f"{version}.pth").stat().st_size / 1024, 1) if (MODEL_DIR / f"{version}.pth").exists() else 0
                 record = SavedModel(
                     model_id=version,
                     model_type="dryer",
@@ -481,7 +517,7 @@ async def train_model(
                     best_val_loss=round(best_loss, 6),
                     r2=round(r2, 4),
                     trained_at=datetime.now(),
-                    file_size_kb=round((MODEL_DIR / f"{version}.pth").stat().st_size / 1024, 1) if (MODEL_DIR / f"{version}.pth").exists() else 0,
+                    file_size_kb=file_size,
                     schema_id="dryer",
                     input_dim=n_features,
                     remark=f"active=Y",
@@ -489,14 +525,20 @@ async def train_model(
                 _db.add(record)
                 _db.commit()
                 _db.close()
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'save', 'step': 4, 'total_steps': 4, 'status': 'done', 'title': '保存与注册', 'detail': f'模型已保存: {version}.pth ({file_size} KB)，已同步到数据库'}, ensure_ascii=False)}\n\n"
             except Exception as _e:
                 print(f"烘丝机模型同步到数据库失败: {_e}")
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'save', 'step': 4, 'total_steps': 4, 'status': 'done', 'title': '保存与注册', 'detail': f'模型已保存，但数据库同步失败: {str(_e)}'}, ensure_ascii=False)}\n\n"
 
             done = {
                 "type": "done",
                 "version": version,
                 "best_test_loss": round(best_loss, 6),
                 "final_r2": round(r2, 4),
+                "best_epoch": best_epoch,
+                "total_params": total_params,
+                "trainable_params": trainable_params,
+                "device": device_name,
                 "train_losses": [round(l, 6) for l in train_losses],
                 "test_losses": [round(l, 6) for l in test_losses],
                 "feature_weights": model.get_feature_weights(),
