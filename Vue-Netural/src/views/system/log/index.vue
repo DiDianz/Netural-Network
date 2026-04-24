@@ -177,7 +177,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getLogList, getLogModules, clearLogs, getLogStats } from '../../api/log'
+import { getLogList, getLogModules, clearLogs, getLogStats } from '../../../api/log'
 
 const logs = ref([])
 const loading = ref(false)
