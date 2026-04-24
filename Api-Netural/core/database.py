@@ -100,6 +100,48 @@ def _migrate_operation_log_type(db):
             print(f"operation_log log_type 迁移失败: {e}")
 
 
+def _deduplicate_roles(db):
+    """清理重复角色：按 role_key 去重，保留 role_id 最小的记录"""
+    try:
+        from models.role import SysRole
+        from models.menu import sys_role_menu
+        from models.user import sys_user_role
+
+        # 找出重复的 role_key（保留 id 最小的）
+        dupes = db.execute(text("""
+            SELECT role_key, MIN(role_id) AS keep_id
+            FROM sys_role
+            GROUP BY role_key
+            HAVING COUNT(*) > 1
+        """)).fetchall()
+
+        if not dupes:
+            print("角色表无重复数据")
+            return
+
+        total_deleted = 0
+        for role_key, keep_id in dupes:
+            # 获取该 role_key 下所有 role_id（排除要保留的）
+            ids = db.execute(text(
+                "SELECT role_id FROM sys_role WHERE role_key = :key AND role_id != :keep"
+            ), {"key": role_key, "keep": keep_id}).fetchall()
+
+            for (dup_id,) in ids:
+                # 先删关联表
+                db.execute(sys_role_menu.delete().where(sys_role_menu.c.role_id == dup_id))
+                db.execute(sys_user_role.delete().where(sys_user_role.c.role_id == dup_id))
+                # 再删角色
+                db.execute(text("DELETE FROM sys_role WHERE role_id = :id"), {"id": dup_id})
+                total_deleted += 1
+                print(f"  删除重复角色: role_key={role_key}, role_id={dup_id} (保留 {keep_id})")
+
+        db.commit()
+        print(f"角色去重完成，共删除 {total_deleted} 条重复记录")
+    except Exception as e:
+        db.rollback()
+        print(f"角色去重失败: {e}")
+
+
 def _init_instance_type_flags(db):
     """为已有的可作为实例类型的菜单设置标记"""
     try:
@@ -276,6 +318,7 @@ def init_db():
             _migrate_menu_as_instance_type(db)
             _migrate_plc_port(db)
             _migrate_operation_log_type(db)
+            _deduplicate_roles(db)
             _sync_saved_models_to_db(db)
             return
 
