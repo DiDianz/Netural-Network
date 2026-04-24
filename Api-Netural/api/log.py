@@ -1,10 +1,10 @@
-# api/log.py
+# api/log.py — 增强版：支持 log_type 筛选
 """
-操作日志 API — 查询 / 新增 / 清空
+操作日志 API — 查询 / 新增 / 清空 / 统计
 """
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from datetime import datetime, timedelta
 
 from core.database import get_db
@@ -15,6 +15,7 @@ router = APIRouter(prefix="/log", tags=["操作日志"])
 
 @router.get("/list")
 async def list_logs(
+    log_type: str = Query(None, description="日志类型: api/db/error/frontend"),
     user_name: str = Query(None, description="操作用户"),
     module: str = Query(None, description="功能模块"),
     action: str = Query(None, description="操作动作"),
@@ -26,9 +27,11 @@ async def list_logs(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
-    """查询操作日志"""
+    """查询操作日志（支持按类型筛选）"""
     query = db.query(OperationLog)
 
+    if log_type:
+        query = query.filter(OperationLog.log_type == log_type)
     if user_name:
         query = query.filter(OperationLog.user_name.like(f"%{user_name}%"))
     if module:
@@ -68,6 +71,7 @@ async def list_logs(
         "data": [
             {
                 "id": r.id,
+                "log_type": r.log_type or "api",
                 "user_name": r.user_name or "",
                 "module": r.module or "",
                 "action": r.action or "",
@@ -94,20 +98,72 @@ async def get_modules(db: Session = Depends(get_db)):
     return {"code": 200, "data": modules}
 
 
+@router.get("/stats")
+async def get_stats(
+    days: int = Query(7, ge=1, le=90, description="统计最近N天"),
+    db: Session = Depends(get_db)
+):
+    """日志统计概览"""
+    cutoff = datetime.now() - timedelta(days=days)
+
+    # 按类型统计
+    type_stats = db.query(
+        OperationLog.log_type,
+        func.count(OperationLog.id)
+    ).filter(
+        OperationLog.create_time >= cutoff
+    ).group_by(OperationLog.log_type).all()
+
+    # 按状态统计
+    status_stats = db.query(
+        OperationLog.status,
+        func.count(OperationLog.id)
+    ).filter(
+        OperationLog.create_time >= cutoff
+    ).group_by(OperationLog.status).all()
+
+    # 今日总数
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = db.query(func.count(OperationLog.id)).filter(
+        OperationLog.create_time >= today
+    ).scalar()
+
+    # 今日错误数
+    today_error = db.query(func.count(OperationLog.id)).filter(
+        OperationLog.create_time >= today,
+        OperationLog.status >= 400
+    ).scalar()
+
+    return {
+        "code": 200,
+        "data": {
+            "by_type": {r[0]: r[1] for r in type_stats},
+            "by_status": {str(r[0]): r[1] for r in status_stats},
+            "today_total": today_count,
+            "today_error": today_error,
+        }
+    }
+
+
 @router.delete("/clear")
 async def clear_logs(
     days: int = Query(30, ge=1, le=365, description="保留最近N天的日志"),
+    log_type: str = Query(None, description="只清理指定类型，不传则清理全部"),
     db: Session = Depends(get_db)
 ):
     """清理旧日志"""
     cutoff = datetime.now() - timedelta(days=days)
-    deleted = db.query(OperationLog).filter(OperationLog.create_time < cutoff).delete()
+    query = db.query(OperationLog).filter(OperationLog.create_time < cutoff)
+    if log_type:
+        query = query.filter(OperationLog.log_type == log_type)
+    deleted = query.delete()
     db.commit()
     return {"code": 200, "msg": f"已清理 {deleted} 条 {days} 天前的日志"}
 
 
 @router.post("/record")
 async def record_log(
+    log_type: str = Query("frontend", description="日志类型"),
     user_name: str = Query(""),
     module: str = Query(""),
     action: str = Query(""),
@@ -123,18 +179,19 @@ async def record_log(
 ):
     """前端主动上报操作日志"""
     record = OperationLog(
-        user_name=user_name,
-        module=module,
-        action=action,
-        method=method,
-        url=url,
+        log_type=log_type,
+        user_name=user_name[:50] if user_name else "",
+        module=module[:50] if module else "",
+        action=action[:100] if action else "",
+        method=method[:10] if method else "",
+        url=url[:500] if url else "",
         params=params[:2000] if params else "",
-        ip=ip,
+        ip=ip[:50] if ip else "",
         status=status,
         error_msg=error_msg[:2000] if error_msg else "",
-        result=result,
+        result=result[:200] if result else "",
         cost_ms=cost_ms,
     )
     db.add(record)
     db.commit()
-    return {"code": 200}
+    return {"code": 200, "msg": "记录成功"}
