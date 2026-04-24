@@ -20,4 +20,4 @@ class SysRole(Base):
     remark = Column(String(500), comment="备注")
 
     users = relationship("SysUser", secondary=sys_user_role, back_populates="roles")
-    menus = relationship("SysMenu", secondary=sys_role_menu, lazy="joined")
+    menus = relationship("SysMenu", secondary=sys_role_menu, lazy="selectin")
