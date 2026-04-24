@@ -142,34 +142,39 @@ def _deduplicate_roles(db):
 
 
 def _ensure_base_roles(db):
-    """确保「管理员」和「普通用户」两个基础角色一定存在"""
+    """确保「管理员」和「普通用户」两个基础角色一定存在且未被删除"""
     try:
         from models.role import SysRole
 
-        existing_keys = {r[0] for r in db.execute(text(
-            "SELECT role_key FROM sys_role"
-        )).fetchall()}
-
         added = []
+        restored = []
 
-        if "admin" not in existing_keys:
-            db.add(SysRole(role_name="管理员", role_key="admin", sort=1,
-                           status="0", del_flag="0", remark="超级管理员"))
-            added.append("管理员")
+        for key, name, sort_val, remark_val in [
+            ("admin", "管理员", 1, "超级管理员"),
+            ("user", "普通用户", 2, "普通用户"),
+        ]:
+            role = db.query(SysRole).filter(SysRole.role_key == key).first()
+            if not role:
+                db.add(SysRole(role_name=name, role_key=key, sort=sort_val,
+                               status="0", del_flag="0", remark=remark_val))
+                added.append(name)
+            elif role.del_flag != "0":
+                role.del_flag = "0"
+                restored.append(name)
 
-        if "user" not in existing_keys:
-            db.add(SysRole(role_name="普通用户", role_key="user", sort=2,
-                           status="0", del_flag="0", remark="普通用户"))
-            added.append("普通用户")
-
-        if added:
+        if added or restored:
             db.commit()
-            print(f"已补充基础角色: {', '.join(added)}")
+            msgs = []
+            if added:
+                msgs.append(f"新增: {', '.join(added)}")
+            if restored:
+                msgs.append(f"恢复: {', '.join(restored)}")
+            print(f"基础角色处理完成 — {'; '.join(msgs)}")
         else:
-            print("基础角色已存在")
+            print("基础角色已存在且状态正常")
     except Exception as e:
         db.rollback()
-        print(f"补充基础角色失败: {e}")
+        print(f"处理基础角色失败: {e}")
 
 
 def _init_instance_type_flags(db):
