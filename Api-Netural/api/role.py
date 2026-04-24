@@ -1,7 +1,7 @@
 # api/role.py
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from core.database import get_db
 from deps import get_current_user
 from models.user import SysUser
@@ -181,3 +181,18 @@ async def delete_role(
     role.del_flag = "2"
     db.commit()
     return {"msg": "删除成功"}
+
+@router.get("/debug")
+async def role_debug(db: Session = Depends(get_db)):
+    """调试：返回 sys_role 表全部原始数据"""
+    roles = db.execute(text(
+        "SELECT role_id, role_name, role_key, sort, status, del_flag, create_time, remark FROM sys_role ORDER BY role_id"
+    )).fetchall()
+    return [
+        {
+            "role_id": r[0], "role_name": r[1], "role_key": r[2],
+            "sort": r[3], "status": r[4], "del_flag": r[5],
+            "create_time": str(r[6]) if r[6] else None, "remark": r[7],
+        }
+        for r in roles
+    ]
