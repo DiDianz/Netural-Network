@@ -494,7 +494,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Refresh } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
@@ -513,8 +513,12 @@ const schemaList = ref([])
 const selectedSchemaId = ref('default')
 
 async function loadSchemas() {
-  const res = await listSchemas()
-  schemaList.value = res.data || []
+  try {
+    const res = await listSchemas()
+    schemaList.value = res.data || []
+  } catch (e) {
+    console.warn('加载特征方案失败:', e)
+  }
 }
 loadSchemas()
 
