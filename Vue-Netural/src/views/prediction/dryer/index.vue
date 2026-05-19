@@ -673,7 +673,7 @@ function getChart(refEl) {
 async function handleUpload(file) {
   uploading.value = true
   try {
-    const res = await uploadDryerData(file)
+    const res = await uploadDryerData(file, selectedSchemaId.value)
     ElMessage.success(res.msg)
     hasData.value = true
     dataRows.value = res.data.rows

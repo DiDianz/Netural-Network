@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from pathlib import Path
 from datetime import datetime
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -72,10 +72,47 @@ def _create_sequences(data: np.ndarray, targets: np.ndarray, window_size: int):
 # ========== 1. 数据上传与分析 ==========
 
 @router.post("/upload")
-async def upload_data(file: UploadFile = File(...)):
-    """上传训练数据 (Excel/CSV)"""
+async def upload_data(file: UploadFile = File(...), schema_id: str = Form("default")):
+    """上传训练数据 (Excel/CSV)，根据特征方案动态校验列"""
     import pandas as pd
     import io
+
+    # 从特征方案获取列定义
+    from core.feature_schema import feature_schema_manager
+    schema = feature_schema_manager.get_schema(schema_id)
+    if not schema:
+        schema = feature_schema_manager.get_schema("default")
+
+    schema_features = [f["name"] for f in schema["features"]]
+    schema_target = schema["target"]["name"]
+    schema_brand = schema.get("brand_column", {}).get("name", "brandID")
+    schema_required = schema_features + [schema_target]
+
+    # 动态构建列名映射: label → name (中文→英文)
+    col_map = {}
+    for f in schema["features"]:
+        if f.get("label"):
+            col_map[f["label"]] = f["name"]
+    if schema["target"].get("label"):
+        col_map[schema["target"]["label"]] = schema_target
+    if schema.get("brand_column", {}).get("label"):
+        col_map[schema["brand_column"]["label"]] = schema_brand
+    # 兼容旧的中文名
+    col_map.update({
+        "加工蒸汽量": "proc_steam_vol", "蒸汽量": "proc_steam_vol",
+        "加工热风温度": "proc_air_temp", "热风温度": "proc_air_temp",
+        "入口含水率": "input_moist",
+        "入口含水率设定值": "input_moist_SP", "入口水分设定": "input_moist_SP",
+        "湿基去除量": "moist_remove",
+        "出口含水率": "out_moist", "出口水分": "out_moist",
+        "出口含水率设定值": "out_moist_SP", "出口水分设定": "out_moist_SP",
+        "出口温度": "out_temp",
+        "物料流量": "mat_flow_PV",
+        "累计物料流量": "total_mat_flow",
+        "环境温度": "env_temp",
+        "环境湿度": "env_moist",
+        "牌号ID": "brandID", "牌号": "brandID",
+    })
 
     content = await file.read()
     filename = file.filename.lower()
@@ -108,13 +145,12 @@ async def upload_data(file: UploadFile = File(...)):
     }
     df = df.rename(columns=col_map)
 
-    # 检查必需列
-    required = FEATURE_NAMES + [TARGET_NAME]
-    missing = [c for c in required if c not in df.columns]
+    # 检查必需列 (基于特征方案)
+    missing = [c for c in schema_required if c not in df.columns]
     if missing:
-        raise HTTPException(400, f"缺少必需列: {missing}")
+        raise HTTPException(400, f"缺少必需列: {missing}（当前方案: {schema.get('name', schema_id)}）")
 
-    df = df[required].dropna()
+    df = df[schema_required].dropna()
 
     if len(df) < 20:
         raise HTTPException(400, f"数据量不足: {len(df)} 行 (最少20行)")
@@ -123,9 +159,21 @@ async def upload_data(file: UploadFile = File(...)):
     data_file = MODEL_DIR / "training_data.npy"
     np.save(data_file, df.values.astype(np.float32))
 
+    # 保存 schema 元数据 (供分析/训练时读取)
+    meta_file = MODEL_DIR / "data_meta.json"
+    meta_file.write_text(json.dumps({
+        "schema_id": schema_id,
+        "schema_name": schema.get("name", ""),
+        "feature_names": schema_features,
+        "target_name": schema_target,
+        "brand_name": schema_brand,
+        "columns": schema_required,
+        "n_features": len(schema_features),
+    }, ensure_ascii=False))
+
     # 数据统计
     stats = {}
-    for col in required:
+    for col in schema_required:
         vals = df[col].values.astype(np.float64)
         def sf(v):
             f = float(v)
@@ -140,10 +188,12 @@ async def upload_data(file: UploadFile = File(...)):
 
     return {
         "code": 200,
-        "msg": f"上传成功: {len(df)} 行数据",
+        "msg": f"上传成功: {len(df)} 行数据（方案: {schema.get('name', schema_id)}）",
         "data": {
             "rows": len(df),
             "columns": list(df.columns),
+            "schema_id": schema_id,
+            "schema_name": schema.get("name", ""),
             "stats": stats
         }
     }
@@ -177,18 +227,32 @@ async def debug_info():
 
 @router.get("/analyze")
 async def analyze_data():
-    """数据分析 — 统计 + 相关性 + 分布"""
+    """数据分析 — 统计 + 相关性 + 分布 (schema-aware)"""
     data_file = MODEL_DIR / "training_data.npy"
+    meta_file = MODEL_DIR / "data_meta.json"
     if not data_file.exists():
         raise HTTPException(400, "请先上传训练数据")
+
+    # 读取 schema 元数据
+    if meta_file.exists():
+        meta = json.loads(meta_file.read_text())
+    else:
+        meta = {
+            "feature_names": FEATURE_NAMES,
+            "target_name": TARGET_NAME,
+            "n_features": len(FEATURE_NAMES),
+        }
+    feat_names = meta["feature_names"]
+    tgt_name = meta["target_name"]
+    n_features = meta["n_features"]
 
     try:
         data = np.load(data_file, allow_pickle=True)
     except Exception as e:
         raise HTTPException(500, f"加载数据文件失败: {str(e)}")
 
-    if data.ndim != 2 or data.shape[1] != len(FEATURE_NAMES) + 1:
-        raise HTTPException(400, f"数据维度异常: {data.shape}，期望 (N, {len(FEATURE_NAMES) + 1})")
+    if data.ndim != 2 or data.shape[1] != n_features + 1:
+        raise HTTPException(400, f"数据维度异常: {data.shape}，期望 (N, {n_features + 1})")
 
     def safe_float(v):
         """将 numpy 值转为安全的 Python float (处理 NaN/Inf)"""
@@ -200,13 +264,13 @@ async def analyze_data():
     def safe_round(v, n=4):
         return round(safe_float(v), n)
 
-    n_features = len(FEATURE_NAMES)
+    n_features = len(feat_names)
     features = data[:, :n_features].astype(np.float64)
     target = data[:, n_features].astype(np.float64)
 
     # 1. 基本统计
     stats = {}
-    all_names = FEATURE_NAMES + [TARGET_NAME]
+    all_names = feat_names + [tgt_name]
     for i, name in enumerate(all_names):
         col = data[:, i].astype(np.float64)
         stats[name] = {
@@ -220,7 +284,7 @@ async def analyze_data():
     # 2. 相关性矩阵 (与 target 的相关性)
     correlations = {}
     target_std = target.std()
-    for i, name in enumerate(FEATURE_NAMES):
+    for i, name in enumerate(feat_names):
         feat_std = features[:, i].std()
         if feat_std < 1e-10 or target_std < 1e-10:
             correlations[name] = 0.0
@@ -235,9 +299,9 @@ async def analyze_data():
     variances = features.var(axis=0)
     var_sum = variances.sum()
     if var_sum < 1e-10:
-        importance = {name: 0.0 for name in FEATURE_NAMES}
+        importance = {name: 0.0 for name in feat_names}
     else:
-        importance = {name: safe_round(v / var_sum) for name, v in zip(FEATURE_NAMES, variances)}
+        importance = {name: safe_round(v / var_sum) for name, v in zip(feat_names, variances)}
 
     # 5. 目标值分布 (直方图)
     hist, bin_edges = np.histogram(target, bins=20)
@@ -294,7 +358,16 @@ async def train_model(
 
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'data', 'step': 1, 'total_steps': 4, 'status': 'running', 'title': '数据准备', 'detail': '正在加载训练数据...'}, ensure_ascii=False)}\n\n"
             data = np.load(data_file, allow_pickle=True)
-            n_features = len(FEATURE_NAMES)
+
+            # 读取 schema 元数据
+            meta_file = MODEL_DIR / "data_meta.json"
+            if meta_file.exists():
+                meta = json.loads(meta_file.read_text())
+            else:
+                meta = {"feature_names": FEATURE_NAMES, "target_name": TARGET_NAME, "n_features": len(FEATURE_NAMES)}
+            n_features = meta["n_features"]
+            feat_names = meta["feature_names"]
+
             features = data[:, :n_features].astype(np.float32)
             target = data[:, n_features].astype(np.float32)
 
@@ -443,8 +516,8 @@ async def train_model(
                             'window_size': window_size
                         },
                         'normalize_stats': {'features': feat_stats, 'target': tgt_stats},
-                        'feature_names': FEATURE_NAMES,
-                        'target_name': TARGET_NAME,
+                        'feature_names': feat_names,
+                        'target_name': tgt_name,
                         'metrics': {
                             'best_test_loss': best_loss,
                             'r2': r2,

@@ -2,9 +2,10 @@
 import request from './request'
 
 // 上传训练数据
-export function uploadDryerData(file) {
+export function uploadDryerData(file, schemaId) {
   const formData = new FormData()
   formData.append('file', file)
+  if (schemaId) formData.append('schema_id', schemaId)
   return request({
     url: '/dryer/upload',
     method: 'post',
