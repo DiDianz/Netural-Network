@@ -508,6 +508,25 @@ import UploadTemplateHelper from '@/components/UploadTemplateHelper.vue'
 import { getPlcDeviceList } from '@/api/plc'
 import request from '@/api/request'
 
+// ---- 常量 ----
+const FEATURE_NAMES = [
+  'proc_steam_vol', 'proc_air_temp', 'input_moist', 'input_moist_SP',
+  'moist_remove', 'out_moist_SP', 'out_temp', 'mat_flow_PV',
+  'total_mat_flow', 'env_temp', 'env_moist', 'brandID'
+]
+const featureNameMap = {
+  proc_steam_vol: '加工蒸汽量', proc_air_temp: '加工热风温度',
+  input_moist: '入口含水率', input_moist_SP: '入口含水率设定值',
+  moist_remove: '湿基去除量', out_moist: '出口含水率',
+  out_moist_SP: '出口含水率设定值', out_temp: '出口温度',
+  mat_flow_PV: '物料流量', total_mat_flow: '累计物料流量',
+  env_temp: '环境温度', env_moist: '环境湿度', brandID: '牌号ID'
+}
+
+// ---- 状态 ----
+const activeTab = ref('analysis')
+const hasData = ref(false)
+
 // 特征方案
 const schemaList = ref([])
 const selectedSchemaId = ref('default')
@@ -530,25 +549,6 @@ watch(activeTab, (tab) => {
 function handleDownloadTemplate(format) {
   downloadTemplate(format, selectedSchemaId.value)
 }
-
-// ---- 常量 ----
-const FEATURE_NAMES = [
-  'proc_steam_vol', 'proc_air_temp', 'input_moist', 'input_moist_SP',
-  'moist_remove', 'out_moist_SP', 'out_temp', 'mat_flow_PV',
-  'total_mat_flow', 'env_temp', 'env_moist', 'brandID'
-]
-const featureNameMap = {
-  proc_steam_vol: '加工蒸汽量', proc_air_temp: '加工热风温度',
-  input_moist: '入口含水率', input_moist_SP: '入口含水率设定值',
-  moist_remove: '湿基去除量', out_moist: '出口含水率',
-  out_moist_SP: '出口含水率设定值', out_temp: '出口温度',
-  mat_flow_PV: '物料流量', total_mat_flow: '累计物料流量',
-  env_temp: '环境温度', env_moist: '环境湿度', brandID: '牌号ID'
-}
-
-// ---- 状态 ----
-const activeTab = ref('analysis')
-const hasData = ref(false)
 const dataRows = ref(0)
 const activeVersion = ref(null)
 const modelR2 = ref(null)
