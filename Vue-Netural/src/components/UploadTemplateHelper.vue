@@ -11,55 +11,61 @@
       </el-button>
     </div>
 
-    <!-- 列结构说明 -->
-    <div class="column-guide" v-if="columnInfo">
-      <div class="guide-title">
-        <el-icon><InfoFilled /></el-icon>
-        数据格式要求（共需 <b>{{ columnInfo.min_columns }}</b> 列）
-      </div>
-      <div class="guide-desc">
-        方案「{{ columnInfo.schema_name }}」要求每行数据按以下 <b>固定顺序</b> 排列：
-      </div>
+    <!-- 列结构说明（可折叠） -->
+    <el-collapse v-if="columnInfo" v-model="guideExpanded">
+      <el-collapse-item name="guide">
+        <template #title>
+          <span class="guide-title">
+            <el-icon><InfoFilled /></el-icon>
+            数据格式要求（共需 <b>{{ columnInfo.min_columns }}</b> 列）
+          </span>
+        </template>
+        <div class="column-guide">
+          <div class="guide-desc">
+            方案「{{ columnInfo.schema_name }}」要求每行数据按以下 <b>固定顺序</b> 排列：
+          </div>
 
-      <!-- 特征列 -->
-      <div class="column-section">
-        <div class="section-label">📊 特征列（前 {{ columnInfo.input_dim }} 列）</div>
-        <div class="column-tags">
-          <el-tag v-for="(f, idx) in columnInfo.features" :key="f.name"
-            type="primary" size="small" effect="plain" class="col-tag">
-            <span class="col-idx">{{ idx + 1 }}</span> {{ f.name }}
-            <span class="col-label" v-if="f.label">（{{ f.label }}）</span>
-          </el-tag>
+          <!-- 特征列 -->
+          <div class="column-section">
+            <div class="section-label">📊 特征列（前 {{ columnInfo.input_dim }} 列）</div>
+            <div class="column-tags">
+              <el-tag v-for="(f, idx) in columnInfo.features" :key="f.name"
+                type="primary" size="small" effect="plain" class="col-tag">
+                <span class="col-idx">{{ idx + 1 }}</span> {{ f.name }}
+                <span class="col-label" v-if="f.label">（{{ f.label }}）</span>
+              </el-tag>
+            </div>
+          </div>
+
+          <!-- 目标列 -->
+          <div class="column-section">
+            <div class="section-label">🎯 预测目标（第 {{ columnInfo.input_dim + 1 }} 列）</div>
+            <el-tag type="danger" size="small" effect="dark" class="col-tag">
+              <span class="col-idx">{{ columnInfo.input_dim + 1 }}</span> {{ columnInfo.target.name }}
+              <span class="col-label" v-if="columnInfo.target.label">（{{ columnInfo.target.label }}）</span>
+            </el-tag>
+          </div>
+
+          <!-- 品牌列 -->
+          <div class="column-section">
+            <div class="section-label">🏷️ 品牌列（第 {{ columnInfo.input_dim + 2 }} 列）</div>
+            <el-tag type="warning" size="small" effect="dark" class="col-tag">
+              <span class="col-idx">{{ columnInfo.input_dim + 2 }}</span> {{ columnInfo.brand_column.name }}
+              <span class="col-label" v-if="columnInfo.brand_column.label">（{{ columnInfo.brand_column.label }}）</span>
+            </el-tag>
+          </div>
+
+          <!-- CSV 表头示例 -->
+          <div class="header-example">
+            <div class="example-label">CSV 表头示例（可直接复制）：</div>
+            <div class="example-code" @click="copyHeader">
+              {{ columnInfo.csv_header_example }}
+              <el-icon class="copy-icon"><CopyDocument /></el-icon>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <!-- 目标列 -->
-      <div class="column-section">
-        <div class="section-label">🎯 预测目标（第 {{ columnInfo.input_dim + 1 }} 列）</div>
-        <el-tag type="danger" size="small" effect="dark" class="col-tag">
-          <span class="col-idx">{{ columnInfo.input_dim + 1 }}</span> {{ columnInfo.target.name }}
-          <span class="col-label" v-if="columnInfo.target.label">（{{ columnInfo.target.label }}）</span>
-        </el-tag>
-      </div>
-
-      <!-- 品牌列 -->
-      <div class="column-section">
-        <div class="section-label">🏷️ 品牌列（第 {{ columnInfo.input_dim + 2 }} 列）</div>
-        <el-tag type="warning" size="small" effect="dark" class="col-tag">
-          <span class="col-idx">{{ columnInfo.input_dim + 2 }}</span> {{ columnInfo.brand_column.name }}
-          <span class="col-label" v-if="columnInfo.brand_column.label">（{{ columnInfo.brand_column.label }}）</span>
-        </el-tag>
-      </div>
-
-      <!-- CSV 表头示例 -->
-      <div class="header-example">
-        <div class="example-label">CSV 表头示例（可直接复制）：</div>
-        <div class="example-code" @click="copyHeader">
-          {{ columnInfo.csv_header_example }}
-          <el-icon class="copy-icon"><CopyDocument /></el-icon>
-        </div>
-      </div>
-    </div>
+      </el-collapse-item>
+    </el-collapse>
   </div>
 </template>
 
@@ -75,6 +81,7 @@ const props = defineProps({
 })
 
 const columnInfo = ref(null)
+const guideExpanded = ref([])  // 默认折叠
 
 async function loadColumnInfo() {
   try {
@@ -112,17 +119,12 @@ function copyHeader() {
   margin-bottom: 12px;
 }
 .column-guide {
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  border-radius: 8px;
-  padding: 14px 16px;
   font-size: 13px;
 }
 .guide-title {
   font-size: 14px;
   font-weight: 600;
   color: #0369a1;
-  margin-bottom: 6px;
   display: flex;
   align-items: center;
   gap: 4px;
