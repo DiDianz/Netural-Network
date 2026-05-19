@@ -518,6 +518,11 @@ async function loadSchemas() {
 }
 loadSchemas()
 
+// 切换 tab 时刷新特征方案列表（避免在特征方案页面修改后回来不更新）
+watch(activeTab, (tab) => {
+  if (tab === 'analysis') loadSchemas()
+})
+
 function handleDownloadTemplate(format) {
   downloadTemplate(format, selectedSchemaId.value)
 }
