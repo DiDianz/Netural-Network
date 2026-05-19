@@ -631,8 +631,6 @@ let charts = new Map()
 onMounted(async () => {
   await loadVersions()
   await loadPLCDevices()
-  // 尝试加载分析
-  try { await refreshAnalysis() } catch {}
 })
 
 onUnmounted(() => {
