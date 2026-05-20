@@ -178,92 +178,90 @@
 
           <!-- 右: 训练流程 + 进度 -->
           <el-col :span="16">
-            <!-- 训练流程可视化 (可折叠) -->
+            <!-- 训练流程可视化 (可折叠，与数据格式要求风格一致) -->
             <el-card shadow="hover" class="training-flow-card">
-              <template #header>
-                <div class="card-header-toggle" @click="trainingFlowCollapsed = !trainingFlowCollapsed">
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    训练流程
-                    <el-tag v-if="trainingDone" type="success" size="small">完成</el-tag>
-                    <el-tag v-else-if="training" type="primary" size="small">运行中</el-tag>
-                  </div>
-                  <el-icon class="collapse-arrow" :class="{ collapsed: trainingFlowCollapsed }">
-                    <ArrowDown />
-                  </el-icon>
-                </div>
-              </template>
-
-              <div v-show="!trainingFlowCollapsed">
-                <el-steps :active="trainingPhaseActive" direction="vertical" :space="80" finish-status="success">
-                  <el-step v-for="phase in trainingPhases" :key="phase.key" :status="phase.status">
-                    <template #title>
-                      <span style="font-size: 14px; font-weight: 600;">
-                        {{ phase.icon }} {{ phase.title }}
-                      </span>
-                      <el-tag
-                        v-if="phase.status === 'running'"
-                        type="primary" size="small" style="margin-left: 8px;"
-                      >
-                        进行中...
-                      </el-tag>
-                      <el-tag
-                        v-else-if="phase.status === 'done'"
-                        type="success" size="small" style="margin-left: 8px;"
-                      >
-                        ✓ 完成
-                      </el-tag>
-                    </template>
-                    <template #description>
-                      <div v-if="phase.detail" class="phase-detail">
-                        {{ phase.detail }}
-                      </div>
-                      <div v-else class="phase-hint">
-                        {{ phase.hint }}
-                      </div>
-                    </template>
-                  </el-step>
-                </el-steps>
-
-                <!-- 训练阶段的进度条 (Phase 3 运行时显示) -->
-                <div v-if="trainProgress" class="train-progress" style="margin-top: 16px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <span style="font-size: 13px; font-weight: 600;">Epoch 进度</span>
-                    <span style="font-size: 12px; color: var(--el-text-color-secondary);">
-                      {{ trainProgress.epoch }}/{{ trainProgress.total_epochs }}
-                      <template v-if="trainProgress.improved"> · 🎯 新最优!</template>
+              <el-collapse v-model="trainingFlowExpanded">
+                <el-collapse-item name="flow">
+                  <template #title>
+                    <span class="flow-title">
+                      <span style="font-size: 16px;">🔄</span>
+                      训练流程
+                      <el-tag v-if="trainingDone" type="success" size="small" style="margin-left: 8px;">完成</el-tag>
+                      <el-tag v-else-if="training" type="primary" size="small" style="margin-left: 8px;">运行中</el-tag>
                     </span>
+                  </template>
+
+                  <el-steps :active="trainingPhaseActive" direction="vertical" :space="80" finish-status="success">
+                    <el-step v-for="phase in trainingPhases" :key="phase.key" :status="phase.status">
+                      <template #title>
+                        <span style="font-size: 14px; font-weight: 600;">
+                          {{ phase.icon }} {{ phase.title }}
+                        </span>
+                        <el-tag
+                          v-if="phase.status === 'running'"
+                          type="primary" size="small" style="margin-left: 8px;"
+                        >
+                          进行中...
+                        </el-tag>
+                        <el-tag
+                          v-else-if="phase.status === 'done'"
+                          type="success" size="small" style="margin-left: 8px;"
+                        >
+                          ✓ 完成
+                        </el-tag>
+                      </template>
+                      <template #description>
+                        <div v-if="phase.detail" class="phase-detail">
+                          {{ phase.detail }}
+                        </div>
+                        <div v-else class="phase-hint">
+                          {{ phase.hint }}
+                        </div>
+                      </template>
+                    </el-step>
+                  </el-steps>
+
+                  <!-- 训练阶段的进度条 (Phase 3 运行时显示) -->
+                  <div v-if="trainProgress" class="train-progress" style="margin-top: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <span style="font-size: 13px; font-weight: 600;">Epoch 进度</span>
+                      <span style="font-size: 12px; color: var(--el-text-color-secondary);">
+                        {{ trainProgress.epoch }}/{{ trainProgress.total_epochs }}
+                        <template v-if="trainProgress.improved"> · 🎯 新最优!</template>
+                      </span>
+                    </div>
+                    <el-progress
+                      :percentage="trainProgressPercent"
+                      :status="trainingDone ? 'success' : ''"
+                      :stroke-width="16"
+                      striped
+                      :striped-flow="training"
+                    />
+                    <div class="progress-stats">
+                      <div class="stat-item">
+                        <span class="stat-label">Train Loss</span>
+                        <span class="stat-value">{{ trainProgress.train_loss }}</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-label">Test Loss</span>
+                        <span class="stat-value" :style="{ color: trainProgress.improved ? '#67C23A' : '' }">{{ trainProgress.test_loss }}</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-label">R²</span>
+                        <span class="stat-value" :style="{ color: trainProgress.r2 > 0.9 ? '#67C23A' : trainProgress.r2 > 0.7 ? '#E6A23C' : '#F56C6C' }">{{ trainProgress.r2 }}</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-label">学习率</span>
+                        <span class="stat-value">{{ trainProgress.lr }}</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-label">最优 Loss</span>
+                        <span class="stat-value">{{ trainProgress.best_loss }} (Epoch {{ trainProgress.best_epoch }})</span>
+                      </div>
+                    </div>
                   </div>
-                  <el-progress
-                    :percentage="trainProgressPercent"
-                    :status="trainingDone ? 'success' : ''"
-                    :stroke-width="16"
-                    striped
-                    :striped-flow="training"
-                  />
-                  <div class="progress-stats">
-                    <div class="stat-item">
-                      <span class="stat-label">Train Loss</span>
-                      <span class="stat-value">{{ trainProgress.train_loss }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <span class="stat-label">Test Loss</span>
-                      <span class="stat-value" :style="{ color: trainProgress.improved ? '#67C23A' : '' }">{{ trainProgress.test_loss }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <span class="stat-label">R²</span>
-                      <span class="stat-value" :style="{ color: trainProgress.r2 > 0.9 ? '#67C23A' : trainProgress.r2 > 0.7 ? '#E6A23C' : '#F56C6C' }">{{ trainProgress.r2 }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <span class="stat-label">学习率</span>
-                      <span class="stat-value">{{ trainProgress.lr }}</span>
-                    </div>
-                    <div class="stat-item">
-                      <span class="stat-label">最优 Loss</span>
-                      <span class="stat-value">{{ trainProgress.best_loss }} (Epoch {{ trainProgress.best_epoch }})</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                </el-collapse-item>
+              </el-collapse>
             </el-card>
 
             <!-- 训练日志终端 -->
@@ -515,7 +513,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh, ArrowDown } from '@element-plus/icons-vue'
+import { Upload, Refresh } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
   uploadDryerData, analyzeData, getWeights, updateWeights,
@@ -585,7 +583,7 @@ const trainLossHistory = reactive({ train: [], test: [] })
 
 // 训练流程阶段
 const hasPhaseEvents = ref(false)
-const trainingFlowCollapsed = ref(false)
+const trainingFlowExpanded = ref(['flow'])
 const trainLogs = ref([])
 const terminalRef = ref(null)
 const trainingPhases = reactive([
@@ -944,7 +942,7 @@ function doStartTraining(baseVersion) {
   trainingPhases.forEach(p => { p.status = 'wait'; p.detail = '' })
   hasPhaseEvents.value = false
   trainLogs.value = []
-  trainingFlowCollapsed.value = false
+  trainingFlowExpanded.value = ['flow']
 
   const tr = targetRangeStr.value.split(',').map(Number)
   const fw = schemaFeatureList.value.map(f => featureWeights[f.name] ?? 1.0)
@@ -1294,13 +1292,30 @@ function renderPLCChart() {
   cursor: pointer;
   user-select: none;
 }
-.collapse-arrow {
-  transition: transform 0.3s ease;
-  font-size: 16px;
-  color: var(--el-text-color-secondary);
+.flow-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-.collapse-arrow.collapsed {
-  transform: rotate(-90deg);
+/* 训练流程卡片：去掉内边距，让 collapse 撑满 */
+.training-flow-card :deep(.el-card__body) {
+  padding: 0;
+}
+.training-flow-card :deep(.el-collapse-item__header) {
+  padding: 12px 20px;
+  font-size: 14px;
+  background: transparent;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.training-flow-card :deep(.el-collapse-item__wrap) {
+  background: transparent;
+  border-bottom: none;
+}
+.training-flow-card :deep(.el-collapse-item__content) {
+  padding: 16px 20px;
 }
 /* ========== 训练日志终端 ========== */
 .terminal-window {
