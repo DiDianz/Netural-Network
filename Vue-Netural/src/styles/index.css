@@ -296,3 +296,67 @@ body {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-secondary) !important;
 }
+
+/* ========== Tooltip 工具提示（全局修复暗色主题） ========== */
+.el-tooltip__popper.is-dark,
+.el-tooltip__popper.el-popper.is-dark {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+}
+
+.el-tooltip__popper.is-light,
+.el-tooltip__popper.el-popper.is-light {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+}
+
+.el-tooltip__popper .el-popper__arrow::before {
+  background: var(--bg-card) !important;
+  border-color: var(--border-secondary) !important;
+}
+
+/* ========== Slider 滑块提示 ========== */
+.el-slider__popper,
+.el-slider .el-tooltip__popper {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+}
+
+.el-slider__popper.is-dark,
+.el-slider .el-tooltip__popper.is-dark {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ========== Popover 弹出框 ========== */
+.el-popover.el-popper {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-dropdown) !important;
+}
+
+/* ========== 通用 Popper 修复（兜底） ========== */
+body .el-popper,
+body .el-popper.is-dark,
+body .el-popper.is-light,
+body .el-tooltip__popper,
+body .el-tooltip__popper.is-dark,
+body .el-tooltip__popper.is-light {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+body .el-popper .el-popper__arrow::before,
+body .el-tooltip__popper .el-popper__arrow::before {
+  background: var(--bg-card) !important;
+  border-color: var(--border-secondary) !important;
+}
