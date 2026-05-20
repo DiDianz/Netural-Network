@@ -35,7 +35,7 @@ class ColumnMappingRequest(BaseModel):
 
 def _auto_detect_mapping(headers: list, schema: dict) -> dict:
     """
-    自动检测列映射：用表头名称匹配 schema 中的特征名、目标名、品牌名。
+    自动检测列映射：用表头名称匹配 schema 中的特征名、目标名、标识名。
     返回 {文件列索引: schema角色} 的映射关系。
     """
     feature_names = [f["name"] for f in schema["features"]]
@@ -314,7 +314,7 @@ async def upload_file(
     target_name = schema["target"]["name"]
     brand_name = schema["brand_column"]["name"]
     feature_names = [f["name"] for f in schema["features"]]
-    min_required_cols = input_dim + 2  # 特征 + 目标 + 品牌
+    min_required_cols = input_dim + 2  # 特征 + 目标 + 标识
     template_columns = feature_names + [target_name, brand_name]
 
     # 解析列映射参数
@@ -360,7 +360,7 @@ async def upload_file(
         if "target" not in mapped_roles:
             missing.append(f"目标列 {target_name}")
         if "brand" not in mapped_roles:
-            missing.append(f"品牌列 {brand_name}")
+            missing.append(f"标识列 {brand_name}")
         if missing:
             raise HTTPException(400, f"列映射不完整，缺少: {', '.join(missing)}")
 
@@ -394,15 +394,15 @@ async def upload_file(
     total_rows = len(data)
     brand_count = len(grouped_data)
 
-    # 检查每个品牌是否有足够数据
+    # 检查每个标识是否有足够数据
     min_brand_rows = min(len(v) for v in grouped_data.values()) if grouped_data else 0
     min_train_rows = 70  # window_size(60) + 10
     if min_brand_rows < min_train_rows:
         small_brands = [str(b) for b, v in grouped_data.items() if len(v) < min_train_rows]
         raise HTTPException(400,
-            f"品牌 {','.join(small_brands)} 数据不足 {min_train_rows} 行"
+            f"标识 {','.join(small_brands)} 数据不足 {min_train_rows} 行"
             f"（最少需要 {min_train_rows} 行才能训练）。"
-            f"当前最小品牌只有 {min_brand_rows} 行。")
+            f"当前最小标识只有 {min_brand_rows} 行。")
 
     data_manager.add_file(file_id, data, {
         "filename": filename,

@@ -80,7 +80,7 @@
         <el-table :data="uploadedFiles" stripe size="small">
           <el-table-column prop="filename" label="文件名" />
           <el-table-column prop="num_rows" label="行数" width="80" />
-          <el-table-column prop="brand_count" label="品牌数" width="80" />
+          <el-table-column prop="brand_count" label="标识数" width="80" />
           <el-table-column label="操作" width="140">
             <template #default="{ row }">
               <el-button size="small" @click="previewData(row)">预览</el-button>
@@ -102,7 +102,7 @@
           <span class="config-label">选择数据</span>
           <el-select v-model="selectedFileIds" multiple placeholder="选择训练数据" style="width: 400px">
             <el-option v-for="f in uploadedFiles" :key="f.file_id"
-              :label="`${f.filename} (${f.num_rows}行, ${f.brand_count}品牌)`" :value="f.file_id" />
+              :label="`${f.filename} (${f.num_rows}行, ${f.brand_count}标识)`" :value="f.file_id" />
           </el-select>
         </div>
       </div>
@@ -190,20 +190,20 @@
       </div>
     </div>
 
-    <!-- [修改1] 品牌图表：上传模式下显示区域，brandList 为空时显示提示 -->
+    <!-- [修改1] 标识图表：上传模式下显示区域，brandList 为空时显示提示 -->
     <div class="brand-charts-section" v-if="trainMode === 'uploaded'">
-      <h3>各品牌 out_moist 预测趋势</h3>
+      <h3>各标识 out_moist 预测趋势</h3>
       <div class="brand-charts-grid">
         <template v-if="brandList.length > 0">
           <div v-for="brand in brandList" :key="brand" class="brand-chart-wrapper">
-            <div class="brand-chart-title">品牌：{{ brand }}</div>
+            <div class="brand-chart-title">标识：{{ brand }}</div>
             <div
               :id="'brand-chart-' + brand"
               class="brand-chart-container"
             ></div>
           </div>
         </template>
-        <div v-else class="brand-empty">暂无品牌预测数据，训练后将显示各品牌预测趋势。</div>
+        <div v-else class="brand-empty">暂无标识预测数据，训练后将显示各标识预测趋势。</div>
       </div>
     </div>
 
@@ -334,9 +334,9 @@ const brandList = computed(function () {
 })
 
 const brandTitle = computed(function () {
-  if (!brandList.value.length) return '品牌: -'
-  if (brandList.value.length === 1) return '品牌: ' + brandList.value[0]
-  return '品牌: ' + brandList.value.join('、')
+  if (!brandList.value.length) return '标识: -'
+  if (brandList.value.length === 1) return '标识: ' + brandList.value[0]
+  return '标识: ' + brandList.value.join('、')
 })
 
 const modelDisplayName = computed(function () {
@@ -756,7 +756,7 @@ function createOrUpdateBrandChart(el, brand, data, color) {
     var indices = data.predictions.map(function (_, i) { return String(i + 1) })
 
     existing.setOption({
-      title: { text: '品牌 ' + brand + ' — out_moist 预测', left: 16, top: 10, textStyle: { fontSize: 13, fontWeight: 600, color: '#e0e0e0' } },
+      title: { text: '标识 ' + brand + ' — out_moist 预测', left: 16, top: 10, textStyle: { fontSize: 13, fontWeight: 600, color: '#e0e0e0' } },
       tooltip: {
         trigger: 'axis',
         backgroundColor: 'rgba(15,15,20,0.95)',

@@ -56,8 +56,8 @@
           <el-input v-model="form.target_name" placeholder="目标列名，如 out_moist" style="width: 200px" />
           <el-input v-model="form.target_label" placeholder="中文名称" style="width: 200px; margin-left: 8px" />
         </el-form-item>
-        <el-form-item label="品牌列">
-          <el-input v-model="form.brand_name" placeholder="品牌列名，如 brandID" style="width: 200px" />
+        <el-form-item label="标识列">
+          <el-input v-model="form.brand_name" placeholder="标识列名，如 brandID" style="width: 200px" />
           <el-input v-model="form.brand_label" placeholder="中文名称" style="width: 200px; margin-left: 8px" />
         </el-form-item>
 
@@ -150,7 +150,7 @@ const form = reactive({
   target_name: 'out_moist',
   target_label: '出口水分',
   brand_name: 'brandID',
-  brand_label: '品牌标识',
+  brand_label: '标识列',
   features: [{ name: '', label: '', weight: 1.0 }],
 })
 
@@ -165,7 +165,7 @@ function resetForm() {
   form.target_name = 'out_moist'
   form.target_label = '出口水分'
   form.brand_name = 'brandID'
-  form.brand_label = '品牌标识'
+  form.brand_label = '标识列'
   form.features = [{ name: '', label: '', weight: 1.0 }]
 }
 
@@ -193,7 +193,7 @@ async function openEdit(row) {
     form.target_name = schema.target?.name || 'out_moist'
     form.target_label = schema.target?.label || '出口水分'
     form.brand_name = schema.brand_column?.name || 'brandID'
-    form.brand_label = schema.brand_column?.label || '品牌标识'
+    form.brand_label = schema.brand_column?.label || '标识列'
     form.features = (schema.features || []).map(f => ({
       name: f.name, label: f.label || '', weight: f.weight ?? 1.0
     }))

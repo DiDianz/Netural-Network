@@ -189,7 +189,7 @@ async def start_training_with_upload(
             combined.append(row + [brand])
 
     if not combined:
-        raise HTTPException(400, "训练数据为空或未找到品牌分组数据")
+        raise HTTPException(400, "训练数据为空或未找到标识分组数据")
 
     logger.info(f"训练请求: model={model_key}, files={ids}, combined_rows={len(combined)}, "
                 f"cols={len(combined[0]) if combined else 0}, schema={schema_id}, input_dim={input_dim}")

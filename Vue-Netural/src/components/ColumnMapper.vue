@@ -67,9 +67,9 @@
                   :disabled="isRoleAssigned('target', row.index)"
                 />
               </el-option-group>
-              <el-option-group label="🏷️ 品牌列">
+              <el-option-group label="🏷️ 标识列">
                 <el-option
-                  :label="`品牌: ${schemaReqs.brand.name} (${schemaReqs.brand.label})`"
+                  :label="`标识: ${schemaReqs.brand.name} (${schemaReqs.brand.label})`"
                   :value="'brand'"
                   :disabled="isRoleAssigned('brand', row.index)"
                 />
@@ -262,7 +262,7 @@ const summaryItems = computed(() => {
   // 品牌列
   items.push({
     role: 'brand',
-    label: `${reqs.brand?.name || 'brand'} (${reqs.brand?.label || '品牌'})`,
+    label: `${reqs.brand?.name || 'brand'} (${reqs.brand?.label || '标识'})`,
     mapped: !!roles['brand'],
     colName: roles['brand'] || '',
   })

@@ -22,8 +22,8 @@ class TargetItem(BaseModel):
 
 
 class BrandColumnItem(BaseModel):
-    name: str = Field("brandID", description="品牌列名")
-    label: str = Field("品牌标识", description="品牌中文名称")
+    name: str = Field("brandID", description="标识列名")
+    label: str = Field("标识列", description="标识中文名称")
 
 
 class CreateSchemaRequest(BaseModel):

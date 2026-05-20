@@ -47,9 +47,9 @@
             </el-tag>
           </div>
 
-          <!-- 品牌列 -->
+          <!-- 标识列 -->
           <div class="column-section">
-            <div class="section-label">🏷️ 品牌列（第 {{ columnInfo.input_dim + 2 }} 列）</div>
+            <div class="section-label">🏷️ 标识列（第 {{ columnInfo.input_dim + 2 }} 列）</div>
             <el-tag type="warning" size="small" effect="dark" class="col-tag">
               <span class="col-idx">{{ columnInfo.input_dim + 2 }}</span> {{ columnInfo.brand_column.name }}
               <span class="col-label" v-if="columnInfo.brand_column.label">（{{ columnInfo.brand_column.label }}）</span>
