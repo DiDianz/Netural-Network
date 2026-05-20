@@ -178,85 +178,115 @@
 
           <!-- 右: 训练流程 + 进度 -->
           <el-col :span="16">
-            <!-- 训练流程可视化 (始终展示) -->
-            <el-card shadow="hover">
+            <!-- 训练流程可视化 (可折叠) -->
+            <el-card shadow="hover" class="training-flow-card">
               <template #header>
-                训练流程
-                <el-tag v-if="trainingDone" type="success" size="small" style="margin-left: 8px;">
-                  完成
-                </el-tag>
-                <el-tag v-else-if="training" type="primary" size="small" style="margin-left: 8px;">
-                  运行中
-                </el-tag>
+                <div class="card-header-toggle" @click="trainingFlowCollapsed = !trainingFlowCollapsed">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    训练流程
+                    <el-tag v-if="trainingDone" type="success" size="small">完成</el-tag>
+                    <el-tag v-else-if="training" type="primary" size="small">运行中</el-tag>
+                  </div>
+                  <el-icon class="collapse-arrow" :class="{ collapsed: trainingFlowCollapsed }">
+                    <ArrowDown />
+                  </el-icon>
+                </div>
               </template>
 
-              <el-steps :active="trainingPhaseActive" direction="vertical" :space="80" finish-status="success">
-                <el-step v-for="phase in trainingPhases" :key="phase.key" :status="phase.status">
-                  <template #title>
-                    <span style="font-size: 14px; font-weight: 600;">
-                      {{ phase.icon }} {{ phase.title }}
-                    </span>
-                    <el-tag
-                      v-if="phase.status === 'running'"
-                      type="primary" size="small" style="margin-left: 8px;"
-                    >
-                      进行中...
-                    </el-tag>
-                    <el-tag
-                      v-else-if="phase.status === 'done'"
-                      type="success" size="small" style="margin-left: 8px;"
-                    >
-                      ✓ 完成
-                    </el-tag>
-                  </template>
-                  <template #description>
-                    <div v-if="phase.detail" class="phase-detail">
-                      {{ phase.detail }}
-                    </div>
-                    <div v-else class="phase-hint">
-                      {{ phase.hint }}
-                    </div>
-                  </template>
-                </el-step>
-              </el-steps>
+              <div v-show="!trainingFlowCollapsed">
+                <el-steps :active="trainingPhaseActive" direction="vertical" :space="80" finish-status="success">
+                  <el-step v-for="phase in trainingPhases" :key="phase.key" :status="phase.status">
+                    <template #title>
+                      <span style="font-size: 14px; font-weight: 600;">
+                        {{ phase.icon }} {{ phase.title }}
+                      </span>
+                      <el-tag
+                        v-if="phase.status === 'running'"
+                        type="primary" size="small" style="margin-left: 8px;"
+                      >
+                        进行中...
+                      </el-tag>
+                      <el-tag
+                        v-else-if="phase.status === 'done'"
+                        type="success" size="small" style="margin-left: 8px;"
+                      >
+                        ✓ 完成
+                      </el-tag>
+                    </template>
+                    <template #description>
+                      <div v-if="phase.detail" class="phase-detail">
+                        {{ phase.detail }}
+                      </div>
+                      <div v-else class="phase-hint">
+                        {{ phase.hint }}
+                      </div>
+                    </template>
+                  </el-step>
+                </el-steps>
 
-              <!-- 训练阶段的进度条 (Phase 3 运行时显示) -->
-              <div v-if="trainProgress" class="train-progress" style="margin-top: 16px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <span style="font-size: 13px; font-weight: 600;">Epoch 进度</span>
-                  <span style="font-size: 12px; color: var(--el-text-color-secondary);">
-                    {{ trainProgress.epoch }}/{{ trainProgress.total_epochs }}
-                    <template v-if="trainProgress.improved"> · 🎯 新最优!</template>
-                  </span>
+                <!-- 训练阶段的进度条 (Phase 3 运行时显示) -->
+                <div v-if="trainProgress" class="train-progress" style="margin-top: 16px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 13px; font-weight: 600;">Epoch 进度</span>
+                    <span style="font-size: 12px; color: var(--el-text-color-secondary);">
+                      {{ trainProgress.epoch }}/{{ trainProgress.total_epochs }}
+                      <template v-if="trainProgress.improved"> · 🎯 新最优!</template>
+                    </span>
+                  </div>
+                  <el-progress
+                    :percentage="trainProgressPercent"
+                    :status="trainingDone ? 'success' : ''"
+                    :stroke-width="16"
+                    striped
+                    :striped-flow="training"
+                  />
+                  <div class="progress-stats">
+                    <div class="stat-item">
+                      <span class="stat-label">Train Loss</span>
+                      <span class="stat-value">{{ trainProgress.train_loss }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">Test Loss</span>
+                      <span class="stat-value" :style="{ color: trainProgress.improved ? '#67C23A' : '' }">{{ trainProgress.test_loss }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">R²</span>
+                      <span class="stat-value" :style="{ color: trainProgress.r2 > 0.9 ? '#67C23A' : trainProgress.r2 > 0.7 ? '#E6A23C' : '#F56C6C' }">{{ trainProgress.r2 }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">学习率</span>
+                      <span class="stat-value">{{ trainProgress.lr }}</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">最优 Loss</span>
+                      <span class="stat-value">{{ trainProgress.best_loss }} (Epoch {{ trainProgress.best_epoch }})</span>
+                    </div>
+                  </div>
                 </div>
-                <el-progress
-                  :percentage="trainProgressPercent"
-                  :status="trainingDone ? 'success' : ''"
-                  :stroke-width="16"
-                  striped
-                  :striped-flow="training"
-                />
-                <div class="progress-stats">
-                  <div class="stat-item">
-                    <span class="stat-label">Train Loss</span>
-                    <span class="stat-value">{{ trainProgress.train_loss }}</span>
+              </div>
+            </el-card>
+
+            <!-- 训练日志终端 -->
+            <el-card shadow="hover" style="margin-top: 16px;" class="train-log-card">
+              <template #header>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 14px; font-weight: 600;">📟 训练日志</span>
+                    <el-tag v-if="trainLogs.length > 0" type="info" size="small">{{ trainLogs.length }} 行</el-tag>
                   </div>
-                  <div class="stat-item">
-                    <span class="stat-label">Test Loss</span>
-                    <span class="stat-value" :style="{ color: trainProgress.improved ? '#67C23A' : '' }">{{ trainProgress.test_loss }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">R²</span>
-                    <span class="stat-value" :style="{ color: trainProgress.r2 > 0.9 ? '#67C23A' : trainProgress.r2 > 0.7 ? '#E6A23C' : '#F56C6C' }">{{ trainProgress.r2 }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">学习率</span>
-                    <span class="stat-value">{{ trainProgress.lr }}</span>
-                  </div>
-                  <div class="stat-item">
-                    <span class="stat-label">最优 Loss</span>
-                    <span class="stat-value">{{ trainProgress.best_loss }} (Epoch {{ trainProgress.best_epoch }})</span>
-                  </div>
+                  <el-button size="small" text @click="trainLogs = []" :disabled="trainLogs.length === 0">
+                    清空
+                  </el-button>
+                </div>
+              </template>
+              <div class="terminal-window" ref="terminalRef">
+                <div v-if="trainLogs.length === 0" class="terminal-empty">
+                  等待训练开始...
+                </div>
+                <div v-for="(log, i) in trainLogs" :key="i" class="terminal-line">
+                  <span class="terminal-time">{{ log.time }}</span>
+                  <span class="terminal-type" :class="'type-' + log.type">{{ log.typeLabel }}</span>
+                  <span class="terminal-msg">{{ log.msg }}</span>
                 </div>
               </div>
             </el-card>
@@ -485,7 +515,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh } from '@element-plus/icons-vue'
+import { Upload, Refresh, ArrowDown } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
   uploadDryerData, analyzeData, getWeights, updateWeights,
@@ -555,6 +585,9 @@ const trainLossHistory = reactive({ train: [], test: [] })
 
 // 训练流程阶段
 const hasPhaseEvents = ref(false)
+const trainingFlowCollapsed = ref(false)
+const trainLogs = ref([])
+const terminalRef = ref(null)
 const trainingPhases = reactive([
   { step: 1, key: 'data',   title: '数据准备',   icon: '📊', status: 'wait', detail: '', hint: '加载训练数据 → Z-Score 标准化 → 创建滑动窗口序列 → 按比例划分训练集/测试集' },
   { step: 2, key: 'build',  title: '模型构建',   icon: '🏗️', status: 'wait', detail: '', hint: '构建 DryerModel (FeatureWeight → LSTM → MultiHeadAttention → FC)，统计参数量' },
@@ -910,6 +943,8 @@ function doStartTraining(baseVersion) {
   // 重置训练阶段
   trainingPhases.forEach(p => { p.status = 'wait'; p.detail = '' })
   hasPhaseEvents.value = false
+  trainLogs.value = []
+  trainingFlowCollapsed.value = false
 
   const tr = targetRangeStr.value.split(',').map(Number)
   const fw = schemaFeatureList.value.map(f => featureWeights[f.name] ?? 1.0)
@@ -917,10 +952,26 @@ function doStartTraining(baseVersion) {
   if (baseVersion) params.base_version = baseVersion
   const qs = new URLSearchParams(params).toString()
 
+  // 日志辅助函数
+  function appendLog(type, typeLabel, msg) {
+    const now = new Date()
+    const time = now.toTimeString().slice(0, 8)
+    trainLogs.value.push({ time, type, typeLabel, msg })
+    // 保持最新 500 行
+    if (trainLogs.value.length > 500) trainLogs.value.shift()
+    // 自动滚动到底部
+    nextTick(() => {
+      if (terminalRef.value) terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+    })
+  }
+
+  appendLog('info', 'SYS', `开始训练: ${trainForm.model_type.toUpperCase()}, ${epochs}轮, 批大小=${batch_size}, 学习率=${learningRate}`)
+
   const es = new EventSource(`http://localhost:8000/dryer/train?${qs}`)
   es.onmessage = (ev) => {
     const data = JSON.parse(ev.data)
     if (data.type === 'error') {
+      appendLog('error', 'ERR', data.msg || '训练失败')
       ElMessage.error(data.msg || '训练失败')
       training.value = false
       es.close()
@@ -934,18 +985,26 @@ function doStartTraining(baseVersion) {
         phase.status = data.status  // 'running' | 'done'
         phase.detail = data.detail || ''
       }
+      const statusIcon = data.status === 'done' ? '✓' : '▸'
+      appendLog('phase', data.status === 'done' ? 'DONE' : 'PHASE', `${statusIcon} [${data.title}] ${data.detail || ''}`)
     } else if (data.type === 'progress') {
       trainProgress.value = data
       trainLossHistory.train.push(data.train_loss)
       trainLossHistory.test.push(data.test_loss)
       renderLossChart()
       renderWeightsChart(data.feature_weights)
+      // 每 5 轮或有改进时记录日志
+      if (data.epoch % 5 === 0 || data.improved) {
+        const improvedTag = data.improved ? ' 🎯 NEW BEST' : ''
+        appendLog('epoch', `E${data.epoch}`, `Loss=${data.train_loss} | Val=${data.test_loss} | R²=${data.r2} | LR=${data.lr}${improvedTag}`)
+      }
     } else if (data.type === 'done') {
       trainResult.value = data
       trainingDone.value = true
       training.value = false
       activeVersion.value = data.version
       modelR2.value = data.final_r2
+      appendLog('done', 'DONE', `训练完成! 版本=${data.version}, R²=${data.final_r2}, Best Loss=${data.best_test_loss} (Epoch ${data.best_epoch})`)
       es.close()
       loadVersions()
       ElMessage.success(data.msg)
@@ -954,6 +1013,7 @@ function doStartTraining(baseVersion) {
   es.onerror = (err) => {
     training.value = false
     es.close()
+    appendLog('error', 'ERR', '训练连接中断 (SSE)')
     ElMessage.error('训练连接中断')
   }
 }
@@ -1226,5 +1286,81 @@ function renderPLCChart() {
   color: var(--el-text-color-secondary);
   margin-top: 4px;
   line-height: 1.6;
+}
+.card-header-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.collapse-arrow {
+  transition: transform 0.3s ease;
+  font-size: 16px;
+  color: var(--el-text-color-secondary);
+}
+.collapse-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+/* ========== 训练日志终端 ========== */
+.terminal-window {
+  background: #0c0c10;
+  border: 1px solid #1e1e2e;
+  border-radius: 8px;
+  padding: 12px 14px;
+  height: 320px;
+  overflow-y: auto;
+  font-family: 'DM Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.terminal-window::-webkit-scrollbar {
+  width: 5px;
+}
+.terminal-window::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+  border-radius: 3px;
+}
+.terminal-empty {
+  color: #555;
+  font-style: italic;
+  text-align: center;
+  padding: 40px 0;
+}
+.terminal-line {
+  display: flex;
+  gap: 10px;
+  padding: 1px 0;
+  white-space: nowrap;
+}
+.terminal-time {
+  color: #555;
+  flex-shrink: 0;
+}
+.terminal-type {
+  flex-shrink: 0;
+  font-weight: 600;
+  min-width: 48px;
+  text-align: right;
+}
+.terminal-type.type-info {
+  color: #4a9eff;
+}
+.terminal-type.type-phase {
+  color: #a78bfa;
+}
+.terminal-type.type-epoch {
+  color: #4ade80;
+}
+.terminal-type.type-done {
+  color: #facc15;
+}
+.terminal-type.type-error {
+  color: #f87171;
+}
+.terminal-msg {
+  color: #c8c8d0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
