@@ -393,6 +393,7 @@ async def train_model(
                 meta = {"feature_names": FEATURE_NAMES, "target_name": TARGET_NAME, "n_features": len(FEATURE_NAMES)}
             n_features = meta["n_features"]
             feat_names = meta["feature_names"]
+            tgt_name = meta.get("target_name", TARGET_NAME)
 
             features = data[:, :n_features].astype(np.float32)
             target = data[:, n_features].astype(np.float32)
