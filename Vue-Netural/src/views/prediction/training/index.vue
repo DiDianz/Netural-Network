@@ -68,6 +68,14 @@
         <el-button type="primary" @click="handleUploadAll" :loading="uploading">上传全部 ({{ fileList.length }})</el-button>
       </div>
 
+      <!-- 列映射组件 -->
+      <ColumnMapper
+        :visible="columnMapperVisible"
+        :file-info="columnMapperFileInfo"
+        @confirm="handleColumnMapperConfirm"
+        @cancel="handleColumnMapperCancel"
+      />
+
       <div class="uploaded-list" v-if="uploadedFiles.length > 0">
         <el-table :data="uploadedFiles" stripe size="small">
           <el-table-column prop="filename" label="文件名" />
@@ -231,10 +239,11 @@ import {
   startTrain, stopTrain, getTrainStatus,
   uploadFile, getUploadedFiles, getUploadPreview, deleteUploadedFile,
   startTrainWithUpload, stopUploadTrain, downloadTemplate,
-  getSavedModels
+  getSavedModels, parseFileHeader
 } from '../../../api/model'
 import { listSchemas, getSchema } from '@/api/feature'
 import UploadTemplateHelper from '@/components/UploadTemplateHelper.vue'
+import ColumnMapper from '@/components/ColumnMapper.vue'
 
 echarts.use([LineChart, CanvasRenderer, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent])
 
@@ -283,6 +292,14 @@ const previewRows = ref([])
 const previewCols = ref([])
 const previewDisplay = ref([])
 const selectedFileIds = ref([])
+
+// 列映射状态
+const columnMapperVisible = ref(false)
+const columnMapperFileInfo = ref({})
+const pendingUploadFile = ref(null)
+const pendingUploadMapping = ref(null)
+const uploadQueue = ref([])  // 待上传文件队列
+const uploadQueueIndex = ref(0)
 
 const trainState = reactive({
   is_training: false, model_key: '', epoch: 0, total_epochs: 0,
@@ -1082,17 +1099,83 @@ async function loadUploadedFiles() {
 }
 
 async function handleUploadAll() {
+  if (!fileList.value.length) return
   uploading.value = true
-  var ok = 0
-  for (var i = 0; i < fileList.value.length; i++) {
-    var f = fileList.value[i]
-    try { await uploadFile(f.raw, selectedSchemaId.value); ok++ }
-    catch (e) { ElMessage.error(f.name + ' 失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message)) }
+
+  // 将所有待上传文件放入队列
+  uploadQueue.value = fileList.value.map(f => f.raw)
+  uploadQueueIndex.value = 0
+
+  // 开始处理队列中的第一个文件
+  await processNextUpload()
+}
+
+async function processNextUpload() {
+  if (uploadQueueIndex.value >= uploadQueue.value.length) {
+    // 队列处理完毕
+    uploading.value = false
+    fileList.value = []
+    uploadQueue.value = []
+    uploadQueueIndex.value = 0
+    await loadUploadedFiles()
+    return
   }
-  if (ok > 0) ElMessage.success(ok + ' 个文件上传成功')
-  fileList.value = []
-  uploading.value = false
-  await loadUploadedFiles()
+
+  const file = uploadQueue.value[uploadQueueIndex.value]
+
+  try {
+    // 1. 先解析表头
+    const res = await parseFileHeader(file, selectedSchemaId.value)
+    const info = res.data
+
+    if (info.auto_ok) {
+      // 自动匹配成功，直接上传（使用自动映射）
+      await doUploadWithMapping(file, info.auto_mapping)
+    } else {
+      // 需要用户手动映射
+      pendingUploadFile.value = file
+      columnMapperFileInfo.value = info
+      columnMapperVisible.value = true
+      uploading.value = false  // 暂停队列，等用户操作
+    }
+  } catch (e) {
+    ElMessage.error((file.name || '文件') + ' 解析失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message))
+    uploadQueueIndex.value++
+    await processNextUpload()
+  }
+}
+
+async function doUploadWithMapping(file, mapping) {
+  try {
+    await uploadFile(file, selectedSchemaId.value, mapping)
+    ElMessage.success((file.name || '文件') + ' 上传成功')
+    uploadQueueIndex.value++
+    uploading.value = true
+    await processNextUpload()
+  } catch (e) {
+    ElMessage.error((file.name || '文件') + ' 上传失败: ' + ((e.response && e.response.data && e.response.data.detail) || e.message))
+    uploadQueueIndex.value++
+    uploading.value = true
+    await processNextUpload()
+  }
+}
+
+function handleColumnMapperConfirm(mapping) {
+  columnMapperVisible.value = false
+  uploading.value = true
+  if (pendingUploadFile.value) {
+    doUploadWithMapping(pendingUploadFile.value, mapping)
+    pendingUploadFile.value = null
+  }
+}
+
+function handleColumnMapperCancel() {
+  columnMapperVisible.value = false
+  // 跳过当前文件，继续队列
+  uploadQueueIndex.value++
+  uploading.value = true
+  pendingUploadFile.value = null
+  processNextUpload()
 }
 
 async function previewData(row) {

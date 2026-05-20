@@ -22,7 +22,8 @@
         </template>
         <div class="column-guide">
           <div class="guide-desc">
-            方案「{{ columnInfo.schema_name }}」要求每行数据按以下 <b>固定顺序</b> 排列：
+            方案「{{ columnInfo.schema_name }}」需要以下列。上传时会自动识别表头列名并映射，
+            也支持手动调整映射关系，列顺序无需严格对应。
           </div>
 
           <!-- 特征列 -->

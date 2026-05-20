@@ -1,6 +1,13 @@
 // src/api/model.js
 import request from './request'
 
+/** 解析文件表头，自动检测列映射 */
+export function parseFileHeader(file, schemaId) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post(`/upload/parse-header?schema_id=${schemaId}`, formData)
+}
+
 // ========== 模型管理 ==========
 export function getModelList() { return request.get('/model/list') }
 export function switchModel(modelKey) { return request.post('/model/switch', { model_key: modelKey }) }
@@ -31,11 +38,14 @@ export function renameSavedModel(modelId, name) {
   return request.put(`/model/saved/${modelId}/rename`, { name })
 }
 
-// ========== 文件上传（支持自定义特征列） ==========
-export function uploadFile(file, schemaId) {
+// ========== 文件上传（支持自定义特征列 + 列映射） ==========
+export function uploadFile(file, schemaId, columnMapping) {
   const fd = new FormData()
   fd.append('file', file)
   const params = schemaId ? { schema_id: schemaId } : {}
+  if (columnMapping) {
+    params.column_mapping = JSON.stringify(columnMapping)
+  }
   return request.post('/upload', fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
     params
