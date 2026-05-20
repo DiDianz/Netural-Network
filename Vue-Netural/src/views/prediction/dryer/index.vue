@@ -965,7 +965,7 @@ function doStartTraining(baseVersion) {
     })
   }
 
-  appendLog('info', 'SYS', `开始训练: ${trainForm.model_type.toUpperCase()}, ${epochs}轮, 批大小=${batch_size}, 学习率=${learningRate}`)
+  appendLog('info', 'SYS', `开始训练: ${trainForm.model_type.toUpperCase()}, ${trainForm.epochs}轮, 批大小=${trainForm.batch_size}, 学习率=${trainForm.learning_rate}`)
 
   const es = new EventSource(`http://localhost:8000/dryer/train?${qs}`)
   es.onmessage = (ev) => {
