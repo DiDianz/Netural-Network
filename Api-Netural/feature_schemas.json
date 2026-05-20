@@ -74,19 +74,9 @@
   },
   {
     "id": "0457b2c0",
-    "name": "烘丝机默认方案 (副本)",
-    "description": "系统内置的 11 特征方案",
+    "name": "测试",
+    "description": "",
     "features": [
-      {
-        "name": "proc_steam_vol",
-        "label": "蒸汽流量",
-        "weight": 1.0
-      },
-      {
-        "name": "proc_air_temp",
-        "label": "热风温度",
-        "weight": 1.0
-      },
       {
         "name": "input_moist",
         "label": "入口水分",
@@ -143,6 +133,6 @@
     },
     "is_builtin": false,
     "created_at": "2026-04-23 15:44:35",
-    "updated_at": "2026-04-23 15:44:35"
+    "updated_at": "2026-05-20 10:01:17"
   }
 ]
