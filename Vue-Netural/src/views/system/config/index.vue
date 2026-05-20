@@ -136,7 +136,7 @@ const otherConfigs = computed(() => {
   return configs.value.filter(c => c.config_key !== 'prediction_instance_types')
 })
 
-const boolKeys = ['model_delete_local_file']
+const boolKeys = ['model_delete_local_file', 'init_default_data']
 
 function isBoolKey(key) {
   return boolKeys.includes(key)

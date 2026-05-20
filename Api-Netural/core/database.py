@@ -357,13 +357,34 @@ def init_db():
             _sync_saved_models_to_db(db)
             return
 
-        _init_roles(db)
-        _init_menus(db)
-        _init_admin_user(db)
-        _init_role_menu(db)
-        _init_configs(db)
-        db.commit()
-        print("数据库初始化完成")
+        # 检查是否需要初始化默认数据
+        init_default = True
+        try:
+            config = db.execute(
+                text("SELECT config_value FROM sys_config WHERE config_key = 'init_default_data'")
+            ).scalar()
+            if config is not None and config == 'false':
+                init_default = False
+                print("系统配置 init_default_data=false，跳过默认数据初始化")
+        except Exception:
+            pass  # 表可能还不存在，使用默认值 True
+
+        if init_default:
+            _init_roles(db)
+            _init_menus(db)
+            _init_admin_user(db)
+            _init_role_menu(db)
+            _init_configs(db)
+            db.commit()
+            print("数据库初始化完成")
+        else:
+            # 即使不初始化默认数据，仍需创建基础配置表记录
+            try:
+                _init_configs(db)
+                db.commit()
+            except Exception:
+                db.rollback()
+            print("数据库表已创建（未初始化默认数据）")
     except Exception as e:
         db.rollback()
         print(f"数据库初始化失败: {e}")
@@ -529,6 +550,10 @@ def _migrate_menus(db):
                 config_key="prediction_instance_types",
                 config_value='[{"key":"realtime","name":"实时预测[通用]","desc":"通用神经网络实时预测，支持 LSTM/GRU/Transformer"},{"key":"dryer","name":"烘丝机出口水分模型","desc":"烘丝机专用预测模型，LSTM+Attention 架构"}]',
                 config_type="Y", remark="新建预测实例时可选的实例类型（JSON 格式）"))
+        if "init_default_data" not in existing_configs:
+            db.add(SysConfig(config_name="启动时初始化默认数据",
+                config_key="init_default_data", config_value="true",
+                config_type="Y", remark="禁用后，后端启动时将不再自动创建默认角色、菜单和管理员账号。仅对首次初始化有效，已初始化的数据库不受影响。"))
 
         db.commit()
         if new_menus:
@@ -582,5 +607,8 @@ def _init_configs(db):
                   config_key="prediction_instance_types",
                   config_value='[{"key":"realtime","name":"实时预测[通用]","desc":"通用神经网络实时预测，支持 LSTM/GRU/Transformer"},{"key":"dryer","name":"烘丝机出口水分模型","desc":"烘丝机专用预测模型，LSTM+Attention 架构"}]',
                   config_type="Y", remark="新建预测实例时可选的实例类型（JSON 格式）"),
+        SysConfig(config_id=3, config_name="启动时初始化默认数据",
+                  config_key="init_default_data", config_value="true",
+                  config_type="Y", remark="禁用后，后端启动时将不再自动创建默认角色、菜单和管理员账号。仅对首次初始化有效，已初始化的数据库不受影响。"),
     ]
     db.add_all(configs)
