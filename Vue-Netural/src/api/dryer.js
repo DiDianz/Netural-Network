@@ -19,6 +19,11 @@ export function analyzeData() {
   return request({ url: '/dryer/analyze', method: 'get' })
 }
 
+// 推荐模型类型
+export function recommendModel() {
+  return request({ url: '/dryer/recommend', method: 'get' })
+}
+
 // 训练模型 (SSE, 由组件直接调用)
 export function getTrainUrl(params) {
   const qs = new URLSearchParams(params).toString()

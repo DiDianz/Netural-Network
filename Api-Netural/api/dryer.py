@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from core.dryer_model import DryerModel
+from core.dryer_model import DryerModel, recommend_model
 from schemas.dryer import TrainRequest, PredictRequest, FeatureWeightUpdate
 
 router = APIRouter(prefix="/dryer", tags=["烘丝机预测"])
@@ -323,6 +323,31 @@ async def analyze_data():
     }
 
 
+@router.get("/recommend")
+async def recommend_model_type():
+    """根据已上传的数据特征推荐模型类型"""
+    data_file = MODEL_DIR / "training_data.npy"
+    meta_file = MODEL_DIR / "data_meta.json"
+    if not data_file.exists():
+        raise HTTPException(400, "请先上传训练数据")
+
+    data = np.load(data_file, allow_pickle=True)
+    n_samples = len(data)
+
+    if meta_file.exists():
+        meta = json.loads(meta_file.read_text())
+        n_features = meta.get("n_features", len(FEATURE_NAMES))
+    else:
+        n_features = data.shape[1] - 1 if data.ndim == 2 else len(FEATURE_NAMES)
+
+    # 计算数据方差（用于辅助判断）
+    features = data[:, :n_features].astype(np.float64)
+    data_variance = float(features.var(axis=0).mean())
+
+    result = recommend_model(n_samples, n_features, data_variance)
+    return {"code": 200, "data": result}
+
+
 # ========== 2. 模型训练 ==========
 
 @router.get("/train")
@@ -334,8 +359,9 @@ async def train_model(
     hidden_dim: int = Query(128, ge=32, le=512),
     num_layers: int = Query(2, ge=1, le=4),
     dropout: float = Query(0.2, ge=0, le=0.5),
+    model_type: str = Query("lstm", description="模型类型: lstm / gru / transformer"),
     test_ratio: float = Query(0.2, ge=0.1, le=0.4),
-    feature_weights: str = Query("", description="逗号分隔的12个特征权重"),
+    feature_weights: str = Query("", description="逗号分隔的特征权重"),
     target_range: str = Query("14.0,15.0", description="目标水分范围"),
     base_version: str = Query("", description="基于已有模型继续训练(微调)")
 ):
@@ -391,7 +417,7 @@ async def train_model(
             # ============================================================
             # Phase 2: 模型构建
             # ============================================================
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'build', 'step': 2, 'total_steps': 4, 'status': 'running', 'title': '模型构建', 'detail': f'正在构建 DryerModel (LSTM+Attention)...'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'build', 'step': 2, 'total_steps': 4, 'status': 'running', 'title': '模型构建', 'detail': f'正在构建 DryerModel ({model_type.upper()})...'}, ensure_ascii=False)}\n\n"
 
             train_ds = TensorDataset(
                 torch.tensor(X_train), torch.tensor(y_train).unsqueeze(-1)
@@ -406,10 +432,11 @@ async def train_model(
                 input_dim=n_features,
                 hidden_dim=hidden_dim,
                 num_layers=num_layers,
-                dropout=dropout
+                dropout=dropout,
+                model_type=model_type
             )
 
-            build_detail = f'模型参数: 输入维度={n_features}, 隐藏层={hidden_dim}, LSTM层数={num_layers}, Dropout={dropout}'
+            build_detail = f'模型类型={model_type.upper()}, 输入维度={n_features}, 隐藏层={hidden_dim}, 层数={num_layers}, Dropout={dropout}'
 
             # 如果指定了基础模型，加载已有权重继续训练
             if base_version:
@@ -513,7 +540,8 @@ async def train_model(
                             'hidden_dim': hidden_dim,
                             'num_layers': num_layers,
                             'dropout': dropout,
-                            'window_size': window_size
+                            'window_size': window_size,
+                            'model_type': model_type
                         },
                         'normalize_stats': {'features': feat_stats, 'target': tgt_stats},
                         'feature_names': feat_names,
@@ -563,7 +591,8 @@ async def train_model(
                     "window_size": window_size,
                     "learning_rate": learning_rate,
                     "batch_size": batch_size,
-                    "target_range": parsed_tr
+                    "target_range": parsed_tr,
+                    "model_type": model_type
                 },
                 "feature_weights": model.get_feature_weights(),
                 "normalize_stats": {'features': feat_stats, 'target': tgt_stats}
@@ -583,7 +612,7 @@ async def train_model(
                     model_id=version,
                     model_type="dryer",
                     model_key="dryer",
-                    display_name="烘丝机出口水分模型",
+                    display_name=f"烘丝机({model_type.upper()})",
                     name=version,
                     filename=f"{version}.pth",
                     epochs=epochs,
@@ -593,7 +622,7 @@ async def train_model(
                     file_size_kb=file_size,
                     schema_id="dryer",
                     input_dim=n_features,
-                    remark=f"active=Y",
+                    remark=f"active=Y, type={model_type}",
                 )
                 _db.add(record)
                 _db.commit()
@@ -612,10 +641,11 @@ async def train_model(
                 "total_params": total_params,
                 "trainable_params": trainable_params,
                 "device": device_name,
+                "model_type": model_type,
                 "train_losses": [round(l, 6) for l in train_losses],
                 "test_losses": [round(l, 6) for l in test_losses],
                 "feature_weights": model.get_feature_weights(),
-                "msg": f"训练完成! 版本: {version}, R²={round(r2, 4)}"
+                "msg": f"训练完成! 版本: {version}, 模型: {model_type.upper()}, R²={round(r2, 4)}"
             }
             yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
 

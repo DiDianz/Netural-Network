@@ -127,7 +127,26 @@
                     <el-option v-for="d in [32,64,128,256,512]" :key="d" :label="d" :value="d" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="LSTM层数">
+                <el-form-item>
+                  <template #label>
+                    <span>模型类型</span>
+                    <el-tag v-if="modelRecommendation" type="success" size="small" style="margin-left: 8px;">
+                      推荐: {{ modelRecommendation.model_type.toUpperCase() }}
+                    </el-tag>
+                  </template>
+                  <el-select v-model="trainForm.model_type" style="width: 100%;">
+                    <el-option label="LSTM — 经典时序模型，稳定性好" value="lstm" />
+                    <el-option label="GRU — 轻量级 RNN，训练快" value="gru" />
+                    <el-option label="Transformer — 自注意力，适合大数据" value="transformer" />
+                  </el-select>
+                  <div v-if="modelRecommendation" class="recommend-hint">
+                    💡 {{ modelRecommendation.reason }}
+                    <el-button size="small" text type="primary" @click="applyRecommendation" style="margin-left: 4px;">
+                      应用推荐配置
+                    </el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item label="网络层数">
                   <el-slider v-model="trainForm.num_layers" :min="1" :max="4" show-input />
                 </el-form-item>
                 <el-form-item label="Dropout">
@@ -261,6 +280,9 @@
                 <el-descriptions-item label="模型版本">
                   <el-tag type="primary" size="small">{{ trainResult.version }}</el-tag>
                 </el-descriptions-item>
+                <el-descriptions-item label="模型类型">
+                  <el-tag type="warning" size="small">{{ (trainResult.model_type || 'lstm').toUpperCase() }}</el-tag>
+                </el-descriptions-item>
                 <el-descriptions-item label="最优测试损失">{{ trainResult.best_test_loss }}</el-descriptions-item>
                 <el-descriptions-item label="最终 R²">
                   <span :style="{ color: trainResult.final_r2 > 0.9 ? '#67C23A' : trainResult.final_r2 > 0.7 ? '#E6A23C' : '#F56C6C', fontWeight: 700 }">
@@ -271,42 +293,9 @@
                 <el-descriptions-item label="模型参数量">{{ trainResult.total_params?.toLocaleString() || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="训练设备">{{ trainResult.device || '-' }}</el-descriptions-item>
               </el-descriptions>
-            </el-card>
-
-            <!-- 版本管理 -->
-            <el-card shadow="hover" style="margin-top: 16px;">
-              <template #header>模型版本管理</template>
-              <el-table :data="versions" size="small" stripe>
-                <el-table-column prop="version" label="版本" min-width="200" />
-                <el-table-column prop="created_at" label="创建时间" width="180" />
-                <el-table-column label="R²" width="80">
-                  <template #default="{ row }">
-                    {{ row.metrics?.final_r2 ?? '-' }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="Loss" width="100">
-                  <template #default="{ row }">
-                    {{ row.metrics?.best_test_loss ?? '-' }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="状态" width="80">
-                  <template #default="{ row }">
-                    <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
-                      {{ row.is_active ? '激活' : '' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="160">
-                  <template #default="{ row }">
-                    <el-button size="small" type="primary" @click="doActivate(row.version)" :disabled="row.is_active">
-                      激活
-                    </el-button>
-                    <el-button size="small" type="danger" @click="doDelete(row.version)">
-                      删除
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <div style="margin-top: 12px;">
+                <el-button type="primary" @click="$router.push('/prediction/saved-models')">查看所有模型</el-button>
+              </div>
             </el-card>
           </el-col>
         </el-row>
@@ -467,15 +456,15 @@
         拖动滑块调整各特征对模型的影响权重（0 = 不关注，1 = 完全关注）。权重越高，模型训练时对该特征的关注度越大。
       </div>
       <el-row :gutter="16">
-        <el-col :span="12" v-for="(name, idx) in FEATURE_NAMES" :key="name" style="margin-bottom: 12px;">
+        <el-col :span="12" v-for="feat in schemaFeatureList" :key="feat.name" style="margin-bottom: 12px;">
           <div style="font-size: 13px; margin-bottom: 4px; font-weight: 500;">
-            {{ featureNameMap[name] || name }}
+            {{ feat.label || feat.name }}
             <span style="float: right; color: var(--el-color-primary); font-weight: 700;">
-              {{ featureWeights[name]?.toFixed(2) }}
+              {{ featureWeights[feat.name]?.toFixed(2) }}
             </span>
           </div>
           <el-slider
-            v-model="featureWeights[name]"
+            v-model="featureWeights[feat.name]"
             :min="0" :max="1" :step="0.05"
             :show-tooltip="false"
           />
@@ -500,7 +489,8 @@ import { Upload, Refresh } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
   uploadDryerData, analyzeData, getWeights, updateWeights,
-  listVersions, activateVersion, deleteVersion, evaluateModel, predict
+  listVersions, activateVersion, deleteVersion, evaluateModel, predict,
+  recommendModel
 } from '@/api/dryer'
 import { listSchemas } from '@/api/feature'
 import { downloadTemplate } from '@/api/model'
@@ -588,24 +578,14 @@ const trainingPhaseActive = computed(() => {
 })
 const trainForm = reactive({
   epochs: 100, batch_size: 32, learning_rate: 0.001,
-  window_size: 10, hidden_dim: 128, num_layers: 2, dropout: 0.2
+  window_size: 10, hidden_dim: 128, num_layers: 2, dropout: 0.2,
+  model_type: 'lstm'
 })
 const targetRangeStr = ref('14.0,15.0')
 const showWeightDialog = ref(false)
-const featureWeights = reactive({
-  proc_steam_vol: 1.0,
-  proc_air_temp: 1.0,
-  input_moist: 1.0,
-  input_moist_SP: 1.0,
-  moist_remove: 1.0,
-  out_moist_SP: 1.0,
-  out_temp: 1.0,
-  mat_flow_PV: 1.0,
-  total_mat_flow: 1.0,
-  env_temp: 1.0,
-  env_moist: 1.0,
-  brandID: 1.0
-})
+const modelRecommendation = ref(null)
+const schemaFeatureList = ref([])
+const featureWeights = reactive({})
 const versions = ref([])
 
 // 预测
@@ -694,6 +674,10 @@ async function refreshAnalysis() {
     analysisData.value = res.data
     hasData.value = true
     dataRows.value = res.data.total_rows
+    // 动态加载 schema 特征列表
+    await loadSchemaFeatures()
+    // 加载模型推荐
+    await loadModelRecommendation()
     await nextTick()
     // 延迟一点确保 DOM 完全渲染
     setTimeout(() => renderAnalysisCharts(), 100)
@@ -703,6 +687,69 @@ async function refreshAnalysis() {
   } finally {
     analyzing.value = false
   }
+}
+
+// 加载当前 schema 的特征列表，初始化权重
+async function loadSchemaFeatures() {
+  try {
+    const res = await listSchemas()
+    const schemas = res.data || []
+    const schema = schemas.find(s => s.id === selectedSchemaId.value) || schemas[0]
+    if (schema && schema.feature_names) {
+      schemaFeatureList.value = schema.feature_names.map((name, i) => ({
+        name,
+        label: schema.feature_names[i] || name
+      }))
+      // 也从 schema 详情获取 label
+      try {
+        const detail = await import('@/api/feature').then(m => m.getSchema(schema.id))
+        if (detail.data?.features) {
+          schemaFeatureList.value = detail.data.features.map(f => ({
+            name: f.name,
+            label: f.label || f.name
+          }))
+        }
+      } catch {}
+      // 初始化权重（保留已有值）
+      schemaFeatureList.value.forEach(f => {
+        if (!(f.name in featureWeights)) {
+          featureWeights[f.name] = 1.0
+        }
+      })
+    }
+  } catch (e) {
+    console.warn('加载特征列表失败:', e)
+  }
+}
+
+// 加载模型推荐
+async function loadModelRecommendation() {
+  try {
+    const res = await recommendModel()
+    modelRecommendation.value = res.data
+    // 自动应用推荐配置
+    if (res.data?.model_type) {
+      trainForm.model_type = res.data.model_type
+    }
+    if (res.data?.recommended_config) {
+      trainForm.num_layers = res.data.recommended_config.num_layers || trainForm.num_layers
+      trainForm.hidden_dim = res.data.recommended_config.hidden_dim || trainForm.hidden_dim
+    }
+  } catch (e) {
+    console.warn('加载模型推荐失败:', e)
+  }
+}
+
+// 应用推荐配置
+function applyRecommendation() {
+  if (!modelRecommendation.value) return
+  const rec = modelRecommendation.value
+  trainForm.model_type = rec.model_type
+  if (rec.recommended_config) {
+    trainForm.num_layers = rec.recommended_config.num_layers || trainForm.num_layers
+    trainForm.hidden_dim = rec.recommended_config.hidden_dim || trainForm.hidden_dim
+  }
+  ElMessage.success('已应用推荐配置')
 }
 
 function renderAnalysisCharts() {
@@ -832,7 +879,7 @@ async function showModelSelector() {
 
 // 重置权重
 function resetWeights() {
-  FEATURE_NAMES.forEach(n => { featureWeights[n] = 1.0 })
+  schemaFeatureList.value.forEach(f => { featureWeights[f.name] = 1.0 })
 }
 
 // 根据相关性自动设置权重
@@ -842,12 +889,11 @@ function setAutoWeights() {
     return
   }
   const corrs = analysisData.value.correlations
-  // 将相关性绝对值映射到 0.3~1.0 范围
   const vals = Object.values(corrs).map(Math.abs)
   const maxVal = Math.max(...vals)
-  FEATURE_NAMES.forEach(n => {
-    const c = Math.abs(corrs[n] || 0)
-    featureWeights[n] = maxVal > 0 ? Math.round((0.3 + 0.7 * c / maxVal) * 100) / 100 : 1.0
+  schemaFeatureList.value.forEach(f => {
+    const c = Math.abs(corrs[f.name] || 0)
+    featureWeights[f.name] = maxVal > 0 ? Math.round((0.3 + 0.7 * c / maxVal) * 100) / 100 : 1.0
   })
   ElMessage.success('已根据相关性自动设置权重')
 }
@@ -866,7 +912,7 @@ function doStartTraining(baseVersion) {
   hasPhaseEvents.value = false
 
   const tr = targetRangeStr.value.split(',').map(Number)
-  const fw = FEATURE_NAMES.map(n => featureWeights[n])
+  const fw = schemaFeatureList.value.map(f => featureWeights[f.name] ?? 1.0)
   const params = { ...trainForm, target_range: tr.join(','), feature_weights: fw.join(',') }
   if (baseVersion) params.base_version = baseVersion
   const qs = new URLSearchParams(params).toString()
@@ -931,9 +977,12 @@ function renderLossChart() {
 function renderWeightsChart(weights) {
   const chart = getChart(weightsChartRef)
   if (!chart || !weights) return
+  const names = schemaFeatureList.value.length > 0
+    ? schemaFeatureList.value.map(f => f.label || f.name)
+    : FEATURE_NAMES.map(n => featureNameMap[n] || n)
   chart.setOption({
     tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: FEATURE_NAMES.map(n => featureNameMap[n] || n), axisLabel: { rotate: 45 } },
+    xAxis: { type: 'category', data: names, axisLabel: { rotate: 45 } },
     yAxis: { type: 'value', name: '权重', min: 0, max: 1 },
     series: [{
       type: 'bar', data: weights.map(w => +w.toFixed(4)),
@@ -1171,5 +1220,11 @@ function renderPLCChart() {
   color: #67C23A;
   font-weight: 700;
   font-size: 18px;
+}
+.recommend-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 4px;
+  line-height: 1.6;
 }
 </style>
