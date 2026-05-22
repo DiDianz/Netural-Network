@@ -4,22 +4,44 @@
     <div class="status-bar">
       <div class="status-item">
         <span class="label">数据状态:</span>
-        <el-tag :type="hasData ? 'success' : 'info'" size="small">
+        <el-tag :type="hasData ? 'success' : 'info'" size="small" effect="dark">
+          <el-icon v-if="hasData" style="margin-right: 2px;"><Check /></el-icon>
+          <el-icon v-else style="margin-right: 2px;"><Close /></el-icon>
           {{ hasData ? `${dataRows} 行已加载` : '未上传' }}
         </el-tag>
       </div>
+      <el-divider direction="vertical" />
       <div class="status-item">
-        <span class="label">模型状态:</span>
-        <el-tag :type="activeVersion ? 'success' : 'info'" size="small">
-          {{ activeVersion || '未训练' }}
+        <span class="label">当前模型:</span>
+        <template v-if="activeVersion">
+          <el-tag type="success" size="small" effect="dark">
+            <el-icon style="margin-right: 2px;"><CircleCheck /></el-icon>
+            {{ activeVersion }}
+          </el-tag>
+          <el-tag v-if="activeModelType" type="warning" size="small" effect="plain" style="margin-left: 4px;">
+            {{ activeModelType.toUpperCase() }}
+          </el-tag>
+        </template>
+        <el-tag v-else type="info" size="small" effect="plain">
+          <el-icon style="margin-right: 2px;"><Warning /></el-icon>
+          未训练 — 请先训练模型
         </el-tag>
       </div>
-      <div class="status-item" v-if="modelR2 !== null">
-        <span class="label">R²:</span>
-        <el-tag :type="modelR2 > 0.9 ? 'success' : modelR2 > 0.7 ? 'warning' : 'danger'" size="small">
-          {{ modelR2 }}
-        </el-tag>
-      </div>
+      <template v-if="activeVersion">
+        <el-divider direction="vertical" />
+        <div class="status-item">
+          <span class="label">R²:</span>
+          <el-tag v-if="modelR2 !== null" :type="modelR2 > 0.9 ? 'success' : modelR2 > 0.7 ? 'warning' : 'danger'" size="small" effect="dark">
+            {{ modelR2 }}
+          </el-tag>
+          <el-tag v-else type="info" size="small" effect="plain">--</el-tag>
+        </div>
+        <el-divider direction="vertical" />
+        <div class="status-item">
+          <span class="label">模型总数:</span>
+          <el-tag type="primary" size="small" effect="plain">{{ versions.length }} 个</el-tag>
+        </div>
+      </template>
     </div>
 
     <!-- 主标签页 -->
@@ -413,8 +435,18 @@
                   <el-input-number v-model="plcForm.interval" :min="0.1" :max="30" :step="0.5" style="width: 100%;" />
                 </el-form-item>
                 <el-form-item label="模型版本">
-                  <el-select v-model="plcForm.model_version" placeholder="使用激活版本" style="width: 100%;" clearable>
-                    <el-option v-for="v in versions" :key="v.version" :label="v.version" :value="v.version" />
+                  <el-select v-model="plcForm.model_version" placeholder="选择模型版本（留空使用激活版本）" style="width: 100%;" clearable>
+                    <el-option
+                      v-for="v in versions" :key="v.version"
+                      :label="`${v.version}  R²:${v.metrics?.final_r2 ?? '--'}  ${v.is_active ? '★ 激活' : ''}`"
+                      :value="v.version"
+                    >
+                      <span>{{ v.version }}</span>
+                      <el-tag v-if="v.is_active" type="success" size="small" style="margin-left: 8px;">★ 激活</el-tag>
+                      <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px;">
+                        R²: {{ v.metrics?.final_r2 ?? '--' }}
+                      </span>
+                    </el-option>
                   </el-select>
                 </el-form-item>
               </el-form>
@@ -507,13 +539,45 @@
         <el-button type="primary" @click="showWeightDialog = false">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 选择已有模型弹窗 -->
+    <el-dialog v-model="showModelSelectDialog" title="选择已有模型" width="560px" :close-on-click-modal="false">
+      <div style="margin-bottom: 12px; font-size: 13px; color: var(--el-text-color-secondary);">
+        选择一个已有模型作为起点继续训练（微调），或直接训练新模型。
+      </div>
+      <el-radio-group v-model="selectedExistingModel" class="model-select-group">
+        <el-radio
+          v-for="v in versions" :key="v.version" :value="v.version"
+          class="model-select-item"
+          :class="{ 'is-active-model': v.is_active }"
+        >
+          <div class="model-option-content">
+            <div class="model-option-header">
+              <span class="model-option-version">{{ v.version }}</span>
+              <el-tag v-if="v.is_active" type="success" size="small" effect="dark">★ 当前激活</el-tag>
+            </div>
+            <div class="model-option-meta">
+              <span>R²: <b>{{ v.metrics?.final_r2 ?? '--' }}</b></span>
+              <span>Loss: <b>{{ v.metrics?.best_test_loss ?? '--' }}</b></span>
+              <span>类型: <b>{{ (v.config?.model_type || 'lstm').toUpperCase() }}</b></span>
+              <span v-if="v.created_at">{{ v.created_at }}</span>
+            </div>
+          </div>
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="showModelSelectDialog = false">取消</el-button>
+        <el-button type="warning" @click="confirmTrainNew">训练新模型</el-button>
+        <el-button type="primary" :disabled="!selectedExistingModel" @click="confirmSelectModel">基于选定模型继续训练</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, nextTick, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Refresh } from '@element-plus/icons-vue'
+import { Upload, Refresh, Check, Close, CircleCheck, Warning } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import {
   uploadDryerData, analyzeData, getWeights, updateWeights,
@@ -544,6 +608,9 @@ const featureNameMap = {
 // ---- 状态 ----
 const activeTab = ref('analysis')
 const hasData = ref(false)
+const showModelSelectDialog = ref(false)
+const selectedExistingModel = ref(null)
+const activeModelType = ref(null)
 
 // 特征方案
 const schemaList = ref([])
@@ -854,27 +921,10 @@ async function startTraining() {
 
   // 检查是否已有训练好的模型
   if (versions.value.length > 0) {
-    try {
-      const result = await ElMessageBox.confirm(
-        `当前已有 ${versions.value.length} 个训练好的模型，是否仍要训练新模型？`,
-        '模型已存在',
-        {
-          confirmButtonText: '训练新模型',
-          cancelButtonText: '选择已有模型',
-          distinguishCancelAndClose: true,
-          type: 'warning',
-        }
-      )
-      // 用户点了"训练新模型"，继续训练
-    } catch (action) {
-      if (action === 'cancel') {
-        // 用户点了"选择已有模型"，弹出选择框
-        await showModelSelector()
-        return
-      }
-      // action === 'close'，用户关掉了对话框，什么都不做
-      return
-    }
+    // 直接弹出选择弹窗
+    selectedExistingModel.value = versions.value.find(v => v.is_active)?.version || null
+    showModelSelectDialog.value = true
+    return
   }
 
   doStartTraining()
@@ -882,30 +932,21 @@ async function startTraining() {
 
 // 选择已有模型继续训练
 async function showModelSelector() {
-  const modelOptions = versions.value.map(v =>
-    `${v.version}  |  R²: ${v.metrics?.final_r2 ?? '-'}  |  Loss: ${v.metrics?.best_test_loss ?? '-'}  |  ${v.is_active ? '✓ 当前激活' : ''}`
-  )
+  selectedExistingModel.value = versions.value.find(v => v.is_active)?.version || null
+  showModelSelectDialog.value = true
+}
 
-  try {
-    const { value: selectedVersion } = await ElMessageBox.prompt(
-      '选择一个已有模型作为起点继续训练（微调）：\n\n' +
-      modelOptions.join('\n'),
-      '基于已有模型继续训练',
-      {
-        confirmButtonText: '继续训练',
-        cancelButtonText: '取消',
-        inputValue: versions.value.find(v => v.is_active)?.version || '',
-        inputPlaceholder: '粘贴版本号',
-      }
-    )
+// 确认：训练新模型
+function confirmTrainNew() {
+  showModelSelectDialog.value = false
+  doStartTraining()
+}
 
-    if (selectedVersion) {
-      // 基于已有模型继续训练
-      doStartTraining(selectedVersion)
-    }
-  } catch {
-    // 用户取消
-  }
+// 确认：基于选定模型继续训练
+function confirmSelectModel() {
+  if (!selectedExistingModel.value) return
+  showModelSelectDialog.value = false
+  doStartTraining(selectedExistingModel.value)
 }
 
 // 重置权重
@@ -1058,6 +1099,11 @@ async function loadVersions() {
     if (active) {
       activeVersion.value = active.version
       modelR2.value = active.metrics?.final_r2 ?? null
+      activeModelType.value = active.config?.model_type || null
+    } else {
+      activeVersion.value = null
+      modelR2.value = null
+      activeModelType.value = null
     }
   } catch {}
 }
@@ -1377,5 +1423,54 @@ function renderPLCChart() {
   color: #c8c8d0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ========== 模型选择弹窗 ========== */
+.model-select-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.model-select-item {
+  width: 100%;
+  margin-right: 0 !important;
+  padding: 12px 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  transition: all 0.2s;
+  height: auto !important;
+}
+.model-select-item:hover {
+  border-color: var(--el-color-primary-light-3);
+  background: var(--el-color-primary-light-9);
+}
+.model-select-item.is-active-model {
+  border-color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+}
+.model-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.model-option-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.model-option-version {
+  font-weight: 600;
+  font-size: 14px;
+  font-family: 'DM Mono', 'Consolas', monospace;
+}
+.model-option-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.model-option-meta b {
+  color: var(--el-text-color-primary);
 }
 </style>
