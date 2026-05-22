@@ -417,15 +417,26 @@
               <el-form :model="plcForm" label-position="top" size="small">
                 <el-form-item label="PLC设备">
                   <div style="display: flex; gap: 8px; align-items: center;">
-                    <el-select v-model="plcForm.device_id" placeholder="选择设备" style="flex: 1;">
+                    <el-select v-model="plcForm.device_id" placeholder="选择设备" style="flex: 1;"
+                      :loading="loadingPlcDevices" no-data-text="暂无PLC设备，请先添加">
                       <el-option v-for="d in plcDevices" :key="d.id" :label="d.name + ' (' + d.ip + ')'" :value="d.id">
-                        <span>{{ d.name }}</span>
-                        <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small" style="margin-left: 8px;">
-                          {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟' : '未连接' }}
-                        </el-tag>
+                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                          <span>{{ d.name }} ({{ d.ip }})</span>
+                          <el-tag :type="d.status === 'connected' ? 'success' : d.status === 'simulated' ? 'warning' : 'info'" size="small">
+                            {{ d.status === 'connected' ? '已连接' : d.status === 'simulated' ? '模拟中' : '未连接' }}
+                          </el-tag>
+                        </div>
                       </el-option>
                     </el-select>
                     <el-button :icon="Refresh" circle size="small" @click="loadPLCDevices" :loading="loadingPlcDevices" />
+                  </div>
+                  <div v-if="!loadingPlcDevices && plcDevices.length === 0" style="margin-top: 6px;">
+                    <el-text type="warning" size="small">
+                      未找到PLC设备，请先到 <el-link type="primary" @click="$router.push('/plc/device')" :underline="false">PLC设备管理</el-link> 页面添加设备
+                    </el-text>
+                  </div>
+                  <div v-if="plcLoadError" style="margin-top: 4px;">
+                    <el-text type="danger" size="small">加载失败: {{ plcLoadError }}</el-text>
                   </div>
                 </el-form-item>
                 <el-form-item label="点位ID (逗号分隔, 留空=全部)">
@@ -629,6 +640,7 @@ loadSchemas()
 // 切换 tab 时刷新特征方案列表（避免在特征方案页面修改后回来不更新）
 watch(activeTab, (tab) => {
   if (tab === 'analysis') loadSchemas()
+  if (tab === 'plc') loadPLCDevices()
 })
 
 function handleDownloadTemplate(format) {
@@ -696,6 +708,7 @@ const predictHistory = reactive({ preds: [], actuals: [] })
 const plcRunning = ref(false)
 const plcDevices = ref([])
 const loadingPlcDevices = ref(false)
+const plcLoadError = ref(null)
 const plcPrediction = ref(null)
 const plcPointsData = ref([])
 const plcHistory = reactive({ preds: [], ticks: [] })
@@ -1160,10 +1173,16 @@ function renderPredictChart() {
 // ---- PLC ----
 async function loadPLCDevices() {
   loadingPlcDevices.value = true
+  plcLoadError.value = null
   try {
     const res = await getPlcDeviceList()
     plcDevices.value = res.data || []
+    if (plcDevices.value.length === 0) {
+      console.warn('PLC设备列表为空，请先添加设备')
+    }
   } catch (e) {
+    plcDevices.value = []
+    plcLoadError.value = e.response?.data?.detail || e.message || '请求失败'
     console.warn('加载PLC设备失败:', e)
   } finally {
     loadingPlcDevices.value = false
