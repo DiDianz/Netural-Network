@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     MYSQL_PORT: int = 3306
     MYSQL_DATABASE: str = "neural_predict"
     MYSQL_USERNAME: str = "root"
-    MYSQL_PASSWORD: str = "root"
+    MYSQL_PASSWORD: str = "Aa123456"
     MYSQL_CHARSET: str = "utf8mb4"
 
     # ========== SQL Server 配置 ==========
