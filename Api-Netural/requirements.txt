@@ -1,24 +1,40 @@
 # requirements.txt
-fastapi==0.115.0
-uvicorn[standard]==0.30.0
-torch==2.3.0
-numpy==1.26.0
-pydantic==2.7.0
-pydantic-settings==2.3.0
-sqlalchemy==2.0.30
-# 数据库驱动 (按 .env 中 DB_TYPE 选择)
-pyodbc==5.1.0          # SQL Server
-pymssql==2.3.0         # SQL Server (备选)
+# 兼容 Python 3.12 / 3.13，版本已验证可用
+
+# ========== 核心框架 ==========
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+pydantic==2.11.4
+pydantic-settings==2.9.1
+
+# ========== 深度学习 ==========
+torch==2.9.1
+numpy==2.2.6
+
+# ========== 数据库 ==========
+sqlalchemy==2.0.40
+alembic==1.16.4
+
+# 数据库驱动 (按 .env 中 DB_TYPE 选择安装)
 pymysql==1.1.1         # MySQL
-python-jose[cryptography]==3.3.0
+pyodbc==5.3.0          # SQL Server
+pymssql==2.3.13        # SQL Server (备选)
+
+# ========== 认证 ==========
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
-python-multipart==0.0.20
-alembic==1.13.0
-asyncio-mqtt==0.16.0
+bcrypt==4.2.1
+
+# ========== 数据处理 ==========
 pandas==2.2.3
-scikit-learn==1.6.1
+scikit-learn==1.7.1
 openpyxl==3.1.5
-websockets==14.1
-joblib==1.4.2
-python-snap7==1.4.1
+joblib==1.5.3
+
+# ========== Web / 异步 ==========
+python-multipart==0.0.20
+websockets==15.0.1
+asyncio-mqtt==0.16.2
+
+# ========== 工业通信 ==========
+python-snap7==3.0.0
