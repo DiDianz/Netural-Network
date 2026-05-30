@@ -30,6 +30,79 @@ def get_db():
         db.close()
 
 
+# ========== 自动创建数据库 ==========
+
+def _get_server_uri() -> str:
+    """获取不带数据库名的服务器连接 URI（用于建库）"""
+    if settings.is_mysql:
+        return (
+            f"mysql+pymysql://{settings.MYSQL_USERNAME}:{settings.MYSQL_PASSWORD}"
+            f"@{settings.MYSQL_SERVER}:{settings.MYSQL_PORT}"
+            f"?charset={settings.MYSQL_CHARSET}"
+        )
+    else:
+        import urllib.parse
+        params = urllib.parse.quote_plus(
+            f"DRIVER={{{settings.MSSQL_DRIVER}}};"
+            f"SERVER={settings.MSSQL_SERVER},{settings.MSSQL_PORT};"
+            f"DATABASE=master;"
+            f"UID={settings.MSSQL_USERNAME};"
+            f"PWD={settings.MSSQL_PASSWORD};"
+            f"TrustServerCertificate=yes;"
+        )
+        return f"mssql+pyodbc:///?odbc_connect={params}"
+
+
+def ensure_database_exists():
+    """检查目标数据库是否存在，不存在则自动创建"""
+    db_type = settings.DB_TYPE.lower().strip()
+    if settings.is_mysql:
+        db_name = settings.MYSQL_DATABASE
+        server_uri = _get_server_uri()
+        create_sql = text(
+            f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
+            f"CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci"
+        )
+    elif settings.is_mssql:
+        db_name = settings.MSSQL_DATABASE
+        server_uri = _get_server_uri()
+        create_sql = text(
+            f"IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'{db_name}') "
+            f"EXEC('CREATE DATABASE [{db_name}]')"
+        )
+    else:
+        return
+
+    try:
+        server_engine = create_engine(server_uri, pool_pre_ping=True)
+        with server_engine.connect() as conn:
+            # 先检查数据库是否存在
+            if settings.is_mysql:
+                exists = conn.execute(
+                    text("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = :db"),
+                    {"db": db_name}
+                ).scalar()
+            else:
+                exists = conn.execute(
+                    text("SELECT 1 FROM sys.databases WHERE name = :db"),
+                    {"db": db_name}
+                ).scalar()
+
+            if exists:
+                print(f"数据库 [{db_name}] 已存在")
+            else:
+                conn.execute(create_sql)
+                if settings.is_mssql:
+                    conn.commit()
+                print(f"✓ 数据库 [{db_name}] 创建成功")
+
+        server_engine.dispose()
+    except Exception as e:
+        print(f"⚠ 自动建库失败: {e}")
+        print(f"  请手动创建数据库 [{db_name}] 后重试")
+        raise
+
+
 # ========== 数据库方言判断 ==========
 
 def _is_mysql() -> bool:
@@ -375,6 +448,10 @@ def _sync_saved_models_to_db(db):
 
 
 def init_db():
+    # 1. 确保数据库存在（不存在则自动创建）
+    ensure_database_exists()
+
+    # 2. 创建所有表
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()

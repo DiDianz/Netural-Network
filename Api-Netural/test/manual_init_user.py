@@ -3,11 +3,12 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.database import SessionLocal, engine, Base
+from core.database import SessionLocal, engine, Base, ensure_database_exists
 from passlib.hash import bcrypt
 from sqlalchemy import text
 
-# 先建表
+# 自动创建数据库（如果不存在）+ 建表
+ensure_database_exists()
 Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()

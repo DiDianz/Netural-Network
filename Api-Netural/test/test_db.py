@@ -4,7 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import get_settings
-from core.database import engine, SessionLocal
+from core.database import engine, SessionLocal, ensure_database_exists
 from sqlalchemy import text
 
 settings = get_settings()
@@ -13,6 +13,14 @@ print("=" * 50)
 print("数据库连接测试")
 print(f"数据库类型: {settings.DB_TYPE}")
 print("=" * 50)
+
+# 0. 自动创建数据库
+print("\n[0] 检查/创建数据库...")
+try:
+    ensure_database_exists()
+except Exception as e:
+    print(f"✗ 数据库创建失败: {e}")
+    exit(1)
 
 # 1. 打印连接信息（隐藏密码）
 if settings.is_mysql:

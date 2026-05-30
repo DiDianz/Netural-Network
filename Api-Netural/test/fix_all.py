@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import get_settings
-from core.database import engine, SessionLocal, Base
+from core.database import engine, SessionLocal, Base, ensure_database_exists
 from passlib.hash import bcrypt
 from sqlalchemy import text
 
@@ -16,6 +16,14 @@ print("=" * 50)
 print("神经网络预测系统 - 数据库修复工具")
 print(f"当前数据库类型: {settings.DB_TYPE}")
 print("=" * 50)
+
+# 0. 自动创建数据库（如果不存在）
+print("\n[0/4] 检查数据库...")
+try:
+    ensure_database_exists()
+except Exception as e:
+    print(f"  ✗ 数据库创建失败: {e}")
+    exit(1)
 
 # 1. 测试连接
 print("\n[1/4] 测试数据库连接...")
