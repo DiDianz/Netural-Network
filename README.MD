@@ -25,30 +25,48 @@
 │  └─────────────────────────┬─────────────────────────────────┘   │
 └────────────────────────────┼─────────────────────────────────────┘
                              │
-                    ┌────────┴────────┐
-                    │  SQL Server     │
-                    │  (pyodbc)       │
-                    │                 │
-                    │  ┌───────────┐  │
-                    │  │ sys_user  │  │
-                    │  │ sys_role  │  │
-                    │  │ sys_menu  │  │
-                    │  └───────────┘  │
-                    └─────────────────┘
+                ┌────────────┴────────────┐
+                │  MySQL / SQL Server     │
+                │  (通过 .env DB_TYPE 切换) │
+                │                         │
+                │  ┌───────────┐          │
+                │  │ sys_user  │          │
+                │  │ sys_role  │          │
+                │  │ sys_menu  │          │
+                │  └───────────┘          │
+                └─────────────────────────┘
 
 
-# 1. SQL Server — 确保已运行，创建数据库
+# ========== 数据库切换 ==========
+# 在 .env 文件中修改 DB_TYPE 即可切换数据库:
+#   DB_TYPE=mysql   → 使用 MySQL (pymysql 驱动)
+#   DB_TYPE=mssql   → 使用 SQL Server (pyodbc 驱动)
+
+# 1. 创建数据库
+# MySQL:
+#    CREATE DATABASE neural_predict CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+# SQL Server:
 #    CREATE DATABASE neural_predict;
 
 # 2. 后端
 cd Api-Netural
 pip install -r requirements.txt
 
-# 编辑 .env 文件，配置 SQL Server 连接信息
-# MSSQL_SERVER=localhost
-# MSSQL_DATABASE=neural_predict
-# MSSQL_USERNAME=sa
-# MSSQL_PASSWORD=YourPassword
+# 编辑 .env 文件，配置数据库连接信息
+# MySQL 示例:
+#   DB_TYPE=mysql
+#   MYSQL_SERVER=localhost
+#   MYSQL_PORT=3306
+#   MYSQL_DATABASE=neural_predict
+#   MYSQL_USERNAME=root
+#   MYSQL_PASSWORD=YourPassword
+#
+# SQL Server 示例:
+#   DB_TYPE=mssql
+#   MSSQL_SERVER=localhost
+#   MSSQL_DATABASE=neural_predict
+#   MSSQL_USERNAME=sa
+#   MSSQL_PASSWORD=YourPassword
 
 python main.py
 # → http://localhost:8000  (首次启动自动建表+初始化数据)

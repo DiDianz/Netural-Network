@@ -1,4 +1,8 @@
-# backend/test_db.py
+# backend/test_db.py — 支持 MySQL / SQL Server 双数据库
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from core.config import get_settings
 from core.database import engine, SessionLocal
 from sqlalchemy import text
@@ -7,14 +11,22 @@ settings = get_settings()
 
 print("=" * 50)
 print("数据库连接测试")
+print(f"数据库类型: {settings.DB_TYPE}")
 print("=" * 50)
 
 # 1. 打印连接信息（隐藏密码）
-print(f"服务器: {settings.MSSQL_SERVER}")
-print(f"端口: {settings.MSSQL_PORT}")
-print(f"数据库: {settings.MSSQL_DATABASE}")
-print(f"用户名: {settings.MSSQL_USERNAME}")
-print(f"连接串: {settings.SQLALCHEMY_DATABASE_URI.replace(settings.MSSQL_PASSWORD, '****')}")
+if settings.is_mysql:
+    print(f"服务器: {settings.MYSQL_SERVER}:{settings.MYSQL_PORT}")
+    print(f"数据库: {settings.MYSQL_DATABASE}")
+    print(f"用户名: {settings.MYSQL_USERNAME}")
+    uri_display = settings.SQLALCHEMY_DATABASE_URI.replace(settings.MYSQL_PASSWORD, '****')
+else:
+    print(f"服务器: {settings.MSSQL_SERVER}:{settings.MSSQL_PORT}")
+    print(f"数据库: {settings.MSSQL_DATABASE}")
+    print(f"用户名: {settings.MSSQL_USERNAME}")
+    uri_display = settings.SQLALCHEMY_DATABASE_URI.replace(settings.MSSQL_PASSWORD, '****')
+
+print(f"连接串: {uri_display}")
 print()
 
 # 2. 测试连接
@@ -29,9 +41,14 @@ except Exception as e:
 # 3. 检查表是否存在
 try:
     with engine.connect() as conn:
-        tables = conn.execute(text(
-            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'"
-        )).fetchall()
+        if settings.is_mysql:
+            tables = conn.execute(text(
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = :db AND TABLE_TYPE = 'BASE TABLE'"
+            ), {"db": settings.MYSQL_DATABASE}).fetchall()
+        else:
+            tables = conn.execute(text(
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='BASE TABLE'"
+            )).fetchall()
         print(f"\n现有表: {[t[0] for t in tables]}")
 except Exception as e:
     print(f"✗ 查询表失败: {e}")

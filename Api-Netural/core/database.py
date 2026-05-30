@@ -1,4 +1,4 @@
-# core/database.py — 添加 PLC 菜单初始化
+# core/database.py — 支持 MySQL / SQL Server 双数据库
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from core.config import get_settings
@@ -30,27 +30,61 @@ def get_db():
         db.close()
 
 
+# ========== 数据库方言判断 ==========
+
+def _is_mysql() -> bool:
+    return settings.is_mysql
+
+
+def _is_mssql() -> bool:
+    return settings.is_mssql
+
+
+def _varchar_type(length: int = 50) -> str:
+    """返回当前方言对应的字符串列类型"""
+    if _is_mysql():
+        return f"VARCHAR({length})"
+    return f"NVARCHAR({length})"
+
+
+def _column_exists(db, table: str, column: str) -> bool:
+    """通用：检查表中是否存在某列"""
+    try:
+        if _is_mysql():
+            result = db.execute(text(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = :db AND TABLE_NAME = :tbl AND COLUMN_NAME = :col"
+            ), {"db": settings.MYSQL_DATABASE, "tbl": table, "col": column}).scalar()
+        else:
+            result = db.execute(text(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_NAME = :tbl AND COLUMN_NAME = :col"
+            ), {"tbl": table, "col": column}).scalar()
+        return bool(result and result > 0)
+    except Exception:
+        return False
+
+
+# ========== 迁移函数 ==========
+
 def _migrate_prediction_instance(db):
     """为 prediction_instance 表添加缺失的列"""
-    try:
-        # 检查 base_model_id 列是否存在
-        db.execute(text("SELECT TOP 1 base_model_id FROM prediction_instance"))
-        print("prediction_instance 表已是最新")
-    except Exception:
+    if not _column_exists(db, "prediction_instance", "base_model_id"):
         try:
-            db.execute(text("ALTER TABLE prediction_instance ADD base_model_id NVARCHAR(50) DEFAULT ''"))
+            col_type = _varchar_type(50)
+            db.execute(text(f"ALTER TABLE prediction_instance ADD base_model_id {col_type} DEFAULT ''"))
             db.commit()
             print("prediction_instance 表已添加 base_model_id 列")
         except Exception as e:
             db.rollback()
             print(f"prediction_instance 迁移失败: {e}")
+    else:
+        print("prediction_instance 表已是最新")
 
-    # 检查 instance_type 列
-    try:
-        db.execute(text("SELECT TOP 1 instance_type FROM prediction_instance"))
-    except Exception:
+    if not _column_exists(db, "prediction_instance", "instance_type"):
         try:
-            db.execute(text("ALTER TABLE prediction_instance ADD instance_type NVARCHAR(50) DEFAULT 'realtime'"))
+            col_type = _varchar_type(50)
+            db.execute(text(f"ALTER TABLE prediction_instance ADD instance_type {col_type} DEFAULT 'realtime'"))
             db.commit()
             print("prediction_instance 表已添加 instance_type 列")
         except Exception as e:
@@ -60,19 +94,19 @@ def _migrate_prediction_instance(db):
 
 def _migrate_menu_as_instance_type(db):
     """为 sys_menu 表添加 as_instance_type 列，并初始化标记"""
-    try:
-        db.execute(text("SELECT TOP 1 as_instance_type FROM sys_menu"))
-        # 列已存在，检查是否需要初始化标记
-        _init_instance_type_flags(db)
-    except Exception:
+    if not _column_exists(db, "sys_menu", "as_instance_type"):
         try:
-            db.execute(text("ALTER TABLE sys_menu ADD as_instance_type NVARCHAR(1) DEFAULT 'N'"))
+            col_type = _varchar_type(1)
+            db.execute(text(f"ALTER TABLE sys_menu ADD as_instance_type {col_type} DEFAULT 'N'"))
             db.commit()
             print("sys_menu 表已添加 as_instance_type 列")
             _init_instance_type_flags(db)
         except Exception as e:
             db.rollback()
             print(f"sys_menu as_instance_type 迁移失败: {e}")
+    else:
+        # 列已存在，检查是否需要初始化标记
+        _init_instance_type_flags(db)
 
 
 def _migrate_plc_port(db):
@@ -87,17 +121,17 @@ def _migrate_plc_port(db):
 
 def _migrate_operation_log_type(db):
     """为 operation_log 表添加 log_type 列（全链路日志）"""
-    try:
-        db.execute(text("SELECT TOP 1 log_type FROM operation_log"))
-        print("operation_log.log_type 列已存在")
-    except Exception:
+    if not _column_exists(db, "operation_log", "log_type"):
         try:
-            db.execute(text("ALTER TABLE operation_log ADD log_type NVARCHAR(20) DEFAULT 'api'"))
+            col_type = _varchar_type(20)
+            db.execute(text(f"ALTER TABLE operation_log ADD log_type {col_type} DEFAULT 'api'"))
             db.commit()
             print("operation_log 表已添加 log_type 列")
         except Exception as e:
             db.rollback()
             print(f"operation_log log_type 迁移失败: {e}")
+    else:
+        print("operation_log.log_type 列已存在")
 
 
 def _deduplicate_roles(db):

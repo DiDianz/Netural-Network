@@ -1,4 +1,8 @@
-# backend/manual_init_user.py
+# backend/manual_init_user.py — 支持 MySQL / SQL Server 双数据库
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from core.database import SessionLocal, engine, Base
 from passlib.hash import bcrypt
 from sqlalchemy import text
@@ -14,51 +18,45 @@ try:
     if count and count > 0:
         print(f"已有 {count} 个用户，跳过")
     else:
+        from models.role import SysRole
+        from models.user import SysUser
+        from models.menu import SysMenu
+
         # 插入角色
-        db.execute(text("""
-            INSERT INTO sys_role (role_name, role_key, sort, status, remark)
-            VALUES ('超级管理员', 'admin', 1, '0', '超级管理员')
-        """))
-        db.execute(text("""
-            INSERT INTO sys_role (role_name, role_key, sort, status, remark)
-            VALUES ('普通用户', 'user', 2, '0', '普通用户')
-        """))
+        db.add(SysRole(role_name="超级管理员", role_key="admin", sort=1, status="0", remark="超级管理员"))
+        db.add(SysRole(role_name="普通用户", role_key="user", sort=2, status="0", remark="普通用户"))
+        db.flush()
 
         # 插入用户（密码: admin123）
         hashed = bcrypt.hash('admin123')
-        db.execute(text("""
-            INSERT INTO sys_user (user_name, nick_name, password, email, status, del_flag)
-            VALUES ('admin', '管理员', :password, 'admin@test.com', '0', '0')
-        """), {"password": hashed})
+        admin = SysUser(
+            user_name="admin",
+            nick_name="管理员",
+            password=hashed,
+            email="admin@test.com",
+            status="0",
+            del_flag="0",
+        )
+        db.add(admin)
+        db.flush()
 
         # 关联用户和角色
-        db.execute(text("INSERT INTO sys_user_role (user_id, role_id) VALUES (1, 1)"))
+        admin_role = db.query(SysRole).filter_by(role_key="admin").first()
+        admin.roles = [admin_role]
 
         # 插入菜单
-        db.execute(text("""
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon) VALUES
-            ('系统管理', 0, 1, 'system', '', 'M', '0', '0', 'system')
-        """))
-        db.execute(text("""
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon) VALUES
-            ('神经网络预测', 0, 2, 'prediction', '', 'M', '0', '0', 'chart')
-        """))
-        db.execute(text("""
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon) VALUES
-            ('用户管理', 1, 1, 'user', 'system/user/index', 'C', '0', '0', 'user')
-        """))
-        db.execute(text("""
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon) VALUES
-            ('实时预测', 2, 1, 'realtime', 'prediction/realtime/index', 'C', '0', '0', 'monitor')
-        """))
-        db.execute(text("""
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon) VALUES
-            ('历史记录', 2, 2, 'history', 'prediction/history/index', 'C', '0', '0', 'date')
-        """))
-        db.execute(text("""
-            INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon) VALUES
-            ('模型管理', 2, 3, 'models', 'prediction/models/index', 'C', '0', '0', 'code')
-        """))
+        menus = [
+            ('系统管理', 0, 1, 'system', '', 'M', 'system'),
+            ('神经网络预测', 0, 2, 'prediction', '', 'M', 'chart'),
+            ('用户管理', 1, 1, 'user', 'system/user/index', 'C', 'user'),
+            ('实时预测', 2, 1, 'realtime', 'prediction/realtime/index', 'C', 'monitor'),
+            ('历史记录', 2, 2, 'history', 'prediction/history/index', 'C', 'date'),
+            ('模型管理', 2, 3, 'models', 'prediction/models/index', 'C', 'code'),
+        ]
+        for name, parent, order, path, comp, mtype, icon in menus:
+            db.add(SysMenu(menu_name=name, parent_id=parent, order_num=order,
+                           path=path, component=comp, menu_type=mtype,
+                           visible="0", status="0", icon=icon))
 
         db.commit()
         print("初始化完成！")

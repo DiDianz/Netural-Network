@@ -1,9 +1,9 @@
-# backend/fix_all.py
+# backend/fix_all.py — 支持 MySQL / SQL Server 双数据库
 import sys
 import os
 
 # 确保能找到模块
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config import get_settings
 from core.database import engine, SessionLocal, Base
@@ -14,6 +14,7 @@ settings = get_settings()
 
 print("=" * 50)
 print("神经网络预测系统 - 数据库修复工具")
+print(f"当前数据库类型: {settings.DB_TYPE}")
 print("=" * 50)
 
 # 1. 测试连接
@@ -24,10 +25,16 @@ try:
     print("  ✓ 连接成功")
 except Exception as e:
     print(f"  ✗ 连接失败: {e}")
-    print(f"\n  请检查 .env 文件中的数据库配置:")
-    print(f"  服务器: {settings.MSSQL_SERVER}:{settings.MSSQL_PORT}")
-    print(f"  数据库: {settings.MSSQL_DATABASE}")
-    print(f"  用户名: {settings.MSSQL_USERNAME}")
+    if settings.is_mysql:
+        print(f"\n  请检查 .env 文件中的 MySQL 配置:")
+        print(f"  服务器: {settings.MYSQL_SERVER}:{settings.MYSQL_PORT}")
+        print(f"  数据库: {settings.MYSQL_DATABASE}")
+        print(f"  用户名: {settings.MYSQL_USERNAME}")
+    else:
+        print(f"\n  请检查 .env 文件中的 SQL Server 配置:")
+        print(f"  服务器: {settings.MSSQL_SERVER}:{settings.MSSQL_PORT}")
+        print(f"  数据库: {settings.MSSQL_DATABASE}")
+        print(f"  用户名: {settings.MSSQL_USERNAME}")
     exit(1)
 
 # 2. 建表
@@ -60,32 +67,31 @@ try:
         db.commit()
         print("  ✓ admin 密码已重置为: admin123")
     else:
+        from models.role import SysRole
+        from models.user import SysUser, sys_user_role
+        from models.menu import SysMenu
+
         # 插入角色
-        db.execute(text("""
-            IF NOT EXISTS (SELECT 1 FROM sys_role WHERE role_key = 'admin')
-            INSERT INTO sys_role (role_name, role_key, sort, status, remark)
-            VALUES (N'超级管理员', 'admin', 1, '0', N'超级管理员')
-        """))
-        db.execute(text("""
-            IF NOT EXISTS (SELECT 1 FROM sys_role WHERE role_key = 'user')
-            INSERT INTO sys_role (role_name, role_key, sort, status, remark)
-            VALUES (N'普通用户', 'user', 2, '0', N'普通用户')
-        """))
+        db.add(SysRole(role_name="超级管理员", role_key="admin", sort=1, status="0", remark="超级管理员"))
+        db.add(SysRole(role_name="普通用户", role_key="user", sort=2, status="0", remark="普通用户"))
+        db.flush()
 
         # 插入用户
         hashed = bcrypt.hash('admin123')
-        db.execute(text("""
-            INSERT INTO sys_user (user_name, nick_name, password, email, status, del_flag)
-            VALUES ('admin', N'管理员', :password, 'admin@test.com', '0', '0')
-        """), {"password": hashed})
+        admin = SysUser(
+            user_name="admin",
+            nick_name="管理员",
+            password=hashed,
+            email="admin@test.com",
+            status="0",
+            del_flag="0",
+        )
+        db.add(admin)
+        db.flush()
 
         # 关联角色
-        db.execute(text("""
-            INSERT INTO sys_user_role (user_id, role_id)
-            SELECT u.user_id, r.role_id
-            FROM sys_user u, sys_role r
-            WHERE u.user_name = 'admin' AND r.role_key = 'admin'
-        """))
+        admin_role = db.query(SysRole).filter_by(role_key="admin").first()
+        admin.roles = [admin_role]
 
         # 插入菜单
         menus = [
@@ -98,12 +104,10 @@ try:
             ('历史记录', 2, 2, 'history', 'prediction/history/index', 'C', 'date'),
             ('模型管理', 2, 3, 'models', 'prediction/models/index', 'C', 'code'),
         ]
-
         for name, parent, order, path, comp, mtype, icon in menus:
-            db.execute(text("""
-                INSERT INTO sys_menu (menu_name, parent_id, order_num, path, component, menu_type, visible, status, icon)
-                VALUES (:name, :parent, :order, :path, :comp, :mtype, '0', '0', :icon)
-            """), {"name": name, "parent": parent, "order": order, "path": path, "comp": comp, "mtype": mtype, "icon": icon})
+            db.add(SysMenu(menu_name=name, parent_id=parent, order_num=order,
+                           path=path, component=comp, menu_type=mtype,
+                           visible="0", status="0", icon=icon))
 
         db.commit()
         print("  ✓ 数据初始化成功")
