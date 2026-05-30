@@ -1,5 +1,5 @@
 # requirements.txt
-# 兼容 Python 3.12 / 3.13，版本已验证可用
+# 兼容 Python 3.14，版本已验证可用
 
 # ========== 核心框架 ==========
 fastapi==0.115.12
@@ -8,15 +8,15 @@ pydantic==2.11.4
 pydantic-settings==2.9.1
 
 # ========== 深度学习 ==========
-torch==2.9.1
-numpy>=1.26,<3.0
+torch==2.12.0
+numpy>=2.3,<3.0
 
 # ========== 数据库 ==========
 sqlalchemy==2.0.40
 alembic==1.16.4
 
 # 数据库驱动 (按 .env 中 DB_TYPE 选择安装)
-pymysql==1.1.1         # MySQL
+pymysql==1.2.0         # MySQL
 pyodbc==5.3.0          # SQL Server
 pymssql==2.3.13        # SQL Server (备选)
 
@@ -26,8 +26,8 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.2.1
 
 # ========== 数据处理 ==========
-pandas==2.2.3
-scikit-learn==1.7.1
+pandas>=2.3,<4.0
+scikit-learn>=1.7,<2.0
 openpyxl==3.1.5
 joblib==1.5.3
 
